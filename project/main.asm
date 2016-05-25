@@ -19,8 +19,8 @@
 .endmacro 
 
 .macro storemem
-	sds @0, r23
-	sds @0 + 1,r24;
+	sts @0, r23
+	sts @0 + 1,r24;
 .endmacro 
 
 .macro ldscpi
@@ -44,6 +44,7 @@
 .def temp2 = r17
 .def wl = r24
 .def wh = r25
+.def state = r18
 
 ;CONSTANTS
 .set t=80
@@ -52,7 +53,6 @@
 ;VARIABLES
 bounce0:	.byte 1;
 bounce1:	.byte 1;
-rng:		.byte 1;
 seed:		.byte 2;
 
 .cseg
@@ -100,10 +100,10 @@ timer0:
 	push temp
 	
 	;generate rng
-	ldscpi rng, 1;
-	brne nomorerng
-		adiw r25:r24, 1
-	nomorerng:
+	cpi state, 0
+	brne generateRngSeed
+		adiw wh:wl, 7
+	generateRngSeed:
 
 	;debounce pb0
 	ldscpi bounce0, 0
@@ -140,13 +140,25 @@ pb0pressed:
 	ret
 
 pb1pressed:
+	push temp
+	cpi state, 0
+	brne startGame
+		inc state
+		storemem seed
+	startGame:
+	pop temp
 	ret
 
 ;MAIN
 RESET:
 	;INIT
 
-	ldists rng, 1 ;enable rng
+	;initialise variables
+	ldists bounce0, 0
+	ldists bounce1, 0
+	clr state;
+	clr wl;
+	clr wh;
 
 	;stack pointer
 	ldi temp, low(RAMEND)
@@ -215,7 +227,12 @@ RESET:
 	do_lcd_data 'k'
 	do_lcd_data 'e'
 	do_lcd_data 'r'
-	
+
+notYetStarted:
+	cpi state, 1
+	brne notYetStarted
+
+	;START GAME HERE
 
 halt:
 	rjmp halt
