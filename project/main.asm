@@ -73,7 +73,7 @@
 .def temp3 = r20
 
 ;CONSTANTS
-.set t=80
+.set t=2
 .set notstarted=0
 .set inPot=2
 .set inCountdown=1
@@ -137,10 +137,10 @@ RESET:
 	cbi DDRD,0
 	cbi DDRD,1
 
-	;push button debouncer
+	;random number generator
 	clr temp
 	out TCCR0A,temp
-	ldi temp,2<<CS00
+	ldi temp,3<<CS00
 	out TCCR0B,temp
 	ldi temp,1<<TOIE0
 	sts TIMSK0,temp 
@@ -220,31 +220,26 @@ RESET:
 	rjmp win;
 
 ;INTERRUPTS
-EXT_INT0:  
-	push temp  ; save register  
-	in temp, SREG  ; save SREG  
-	push temp  
-	ldscpi bounce0, 0
-	brne pb0isalreadycounting
-		ldists bounce0, 1;
-	pb0isalreadycounting:
-	pop temp  ; restore SREG  
-	out SREG, temp  
-	pop temp  ; restore register   
-	reti 
+EXT_INT0:
+	rjmp RESET
 
-EXT_INT1:  
+EXT_INT1:
 	push temp  ; save register  
 	in temp, SREG  ; save SREG  
 	push temp  
-	ldscpi bounce1, 0
-	brne pb1isalreadycounting
-		ldists bounce1, 1;
-	pb1isalreadycounting:
+	cpi at, notStarted
+	brne startGame
+		inc at
+		storemem seed
+	startGame:
+	cpi at, won
+	brlo restartgame
+		rjmp RESET;
+	restartGame:
 	pop temp  ; restore SREG  
 	out SREG, temp  
-	pop temp  ; restore register   
-	reti 
+	pop temp  ; restore register
+	reti
 
 timer1:
 	push temp
@@ -265,69 +260,29 @@ timer1:
 	reti
 
 timer0:
-	;timer to debounce pb0 and pb1
+	;rngesus
 	push temp
 	in temp, SREG
 	push temp
-	
+
 	;generate rng
 	cpi at, notstarted
 	brne generateRngSeed
-		adiw wh:wl, 63
-		adiw wh:wl, 63
-		adiw wh:wl, 63
-		adiw wh:wl, 63
-		sbiw wh:wl, 1
+		subi wl, low(-36277)
+		ldi temp, high(-36277)
+		sbc wl, temp
+		rjmp generateRngSeedEnd
+
 	generateRngSeed:
+		;disable timer
+		clr temp
+		sts TIMSK0,temp				
+	generateRngSeedEnd:
 
-	;debounce pb0
-	ldscpi bounce0, 0
-	breq debouncePb1;
-		cpi temp, t
-		brlo pb0IsStillCounting	
-			ldists bounce0, 0
-			sbis PIND, 0
-			rcall pb0pressed
-			rjmp debouncePb1
-		pb0IsStillCounting:
-			ldsinc bounce0
-	
-	debouncePb1:
-	ldscpi bounce1, 0
-	breq timer0epilouge;
-		cpi temp, t
-		brlo pb1IsStillCounting	
-			ldists bounce1, 0
-			sbis PIND, 1
-			rcall pb1pressed
-			rjmp timer0epilouge
-		pb1IsStillCounting:
-			ldsinc bounce1
-
-	timer0epilouge:
 	pop temp
 	out SREG, temp
 	pop temp
 	reti
-
-;FUNCTIONS
-pb0pressed:
-	rjmp RESET;
-	ret
-
-pb1pressed:
-	push temp
-	cpi at, notStarted
-	brne startGame
-		inc at
-		storemem seed
-	startGame:
-	cpi at, won
-	brlo restartgame
-		rjmp RESET;
-	restartGame:
-	pop temp
-	ret
 
 ;GAME STATES
 win:
