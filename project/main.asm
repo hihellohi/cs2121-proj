@@ -1,26 +1,49 @@
 .include "m2560def.inc"
 
 ;MACROS
+.macro swp
+	mov r15, @1
+	mov @1, @0
+	mov @0, r15
+.endmacro 
+
 .macro do_lcd_command
+	mov r15, temp
 	ldi temp, @0
 	rcall lcd_command
 	rcall lcd_wait
+	mov temp, r15
 .endmacro
 
 .macro do_lcd_data
+	swp temp, @0
+	rcall lcd_data
+	rcall lcd_wait
+	swp temp, @0
+.endmacro
+
+.macro do_lcd_datai
+	mov r15, temp
 	ldi temp, @0
 	rcall lcd_data
 	rcall lcd_wait
+	mov temp, r15
+.endmacro
+
+.macro bin_to_dec_w
+	ldi temp2, low(@0)
+	ldi temp3, high(@0)
+	rcall bin_to_dec_wf
 .endmacro
 
 .macro loadmem
-	lds r23, @0
-	lds r24, @0 + 1;
+	lds wl, @0
+	lds wh, @0 + 1;
 .endmacro 
 
 .macro storemem
-	sts @0, r23
-	sts @0 + 1,r24;
+	sts @0, wl
+	sts @0 + 1, wh;
 .endmacro 
 
 .macro ldscpi
@@ -42,12 +65,22 @@
 ;REGISTERS
 .def temp = r16
 .def temp2 = r17
+.def temp4 = r21
 .def wl = r24
 .def wh = r25
 .def state = r18
+.def at = r19
+.def temp3 = r20
 
 ;CONSTANTS
 .set t=80
+.set notstarted=0
+.set inPot=2
+.set inCountdown=1
+.set infind=3
+.set inenter=4
+.set won=5
+.set lost=6
 
 .dseg
 ;VARIABLES
@@ -100,7 +133,7 @@ timer0:
 	push temp
 	
 	;generate rng
-	cpi state, 0
+	cpi at, notstarted
 	brne generateRngSeed
 		adiw wh:wl, 7
 	generateRngSeed:
@@ -137,16 +170,92 @@ timer0:
 
 ;FUNCTIONS
 pb0pressed:
+	rjmp RESET;
 	ret
 
 pb1pressed:
 	push temp
-	cpi state, 0
+	cpi at, notStarted
 	brne startGame
-		inc state
+		inc at
 		storemem seed
 	startGame:
+	cpi at, won
+	brlo restartgame
+		rjmp RESET;
+	restartGame:
 	pop temp
+	ret
+
+;GAME STATES
+win:
+	ldi at, won
+	rjmp win
+
+lose:
+	ldi at, lost
+	rjmp lose
+
+startingcountdown:
+	ret
+
+find:
+	ldi at, infind
+	ret
+
+pot:
+	ldi at, inpot
+	ret
+
+enter:
+	ldi at, inenter
+	ret
+
+displayw:
+	push temp
+	push temp2
+	push temp3
+	push wh
+	push wl
+
+	clr temp;
+	do_lcd_command 0b00000001 ; clear display
+	bin_to_dec_w 10000;
+	bin_to_dec_w 1000;
+	bin_to_dec_w 100;
+	bin_to_dec_w 10;
+	bin_to_dec_w 1;
+	cpi temp, 0;
+	brne dontprintzerot
+		do_lcd_datai '0'
+	dontprintzerot:
+
+	pop wl
+	pop wh
+	pop temp3
+	pop temp2
+	pop temp
+	ret;
+
+bin_to_dec_wf:
+	push temp4
+	ldi temp4, '0'
+	bintodecwloop:
+		cp wl, temp2
+		cpc wh, temp3
+		brlo endbintodecwloop
+		
+		sub wl, temp2
+		sbc wh, temp3
+		inc temp4;
+		ser temp;
+		rjmp bintodecwloop;
+	endbintodecwloop:
+	cpi temp, 0
+	breq dontprintbtdw;
+		do_lcd_data temp4
+	dontprintbtdw:
+	pop temp4
 	ret
 
 ;MAIN
@@ -156,9 +265,18 @@ RESET:
 	;initialise variables
 	ldists bounce0, 0
 	ldists bounce1, 0
-	clr state;
+	ldi state, 3;
 	clr wl;
+	clr at;
 	clr wh;
+	clr temp;
+	clr temp2;
+
+	;Lights
+	ser temp
+	out DDRC, temp
+	clr temp
+	out PORTC,temp
 
 	;stack pointer
 	ldi temp, low(RAMEND)
@@ -202,40 +320,52 @@ RESET:
 	do_lcd_command 0b00000110 ; increment, no display shift
 	do_lcd_command 0b00001100 ; Cursor on, no bar, no blink
 
-	do_lcd_data '2'
-	do_lcd_data '1'
-	do_lcd_data '2'
-	do_lcd_data '1'
+	do_lcd_datai '2'
+	do_lcd_datai '1'
+	do_lcd_datai '2'
+	do_lcd_datai '1'
 	do_lcd_command 0b00010100 ; increment to the right
-	do_lcd_data '1'
-	do_lcd_data '6'
-	do_lcd_data 's'
-	do_lcd_data '1'
+	do_lcd_datai '1'
+	do_lcd_datai '6'
+	do_lcd_datai 's'
+	do_lcd_datai '1'
 
 	do_lcd_command 0b11000000
 
-	do_lcd_data 'S'
-	do_lcd_data 'a'
-	do_lcd_data 'f'
-	do_lcd_data 'e'
+	do_lcd_datai 'S'
+	do_lcd_datai 'a'
+	do_lcd_datai 'f'
+	do_lcd_datai 'e'
 	do_lcd_command 0b00010100 ; increment to the right
 
-	do_lcd_data 'C'
-	do_lcd_data 'r'
-	do_lcd_data 'a'
-	do_lcd_data 'c'
-	do_lcd_data 'k'
-	do_lcd_data 'e'
-	do_lcd_data 'r'
+	do_lcd_datai 'C'
+	do_lcd_datai 'r'
+	do_lcd_datai 'a'
+	do_lcd_datai 'c'
+	do_lcd_datai 'k'
+	do_lcd_datai 'e'
+	do_lcd_datai 'r'
 
-notYetStarted:
-	cpi state, 1
-	brne notYetStarted
+	sei;
 
+	notYetStarted:
+		cpi at, incountdown
+		brne notYetStarted
+
+	rcall displayw
+	
 	;START GAME HERE
+	rcall startingcountdown;
 
-halt:
-	rjmp halt
+	cpi state, 0;
+	breq end;
+		rcall pot;
+		rcall find;
+		dec state;
+	end:
+
+	rcall enter;
+	rjmp win;
 
 ;LCD CODE
 .equ LCD_RS = 7
