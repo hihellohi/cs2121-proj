@@ -29,11 +29,16 @@
 	rcall lcd_wait
 	mov temp, r15
 .endmacro
-
+/*
 .macro bin_to_dec_w
 	ldi temp2, low(@0)
 	ldi temp3, high(@0)
 	rcall bin_to_dec_wf
+.endmacro*/
+
+.macro bin_to_dec_t
+	ldi temp2, @0
+	rcall bin_to_dec_f
 .endmacro
 
 .macro loadmem
@@ -56,6 +61,12 @@
 	sts @0, temp
 .endmacro
 
+.macro ldsdec
+	lds temp, @0
+	dec temp
+	sts @0, temp
+.endmacro
+
 .macro ldsinc
 	lds temp, @0
 	inc temp
@@ -73,7 +84,7 @@
 .def temp3 = r20
 
 ;CONSTANTS
-.set t=2
+.set t=30
 .set notstarted=0
 .set inPot=2
 .set inCountdown=1
@@ -85,9 +96,11 @@
 
 .dseg
 ;VARIABLES
-bounce0:	.byte 1;
-bounce1:	.byte 1;
-seed:		.byte 2;
+count:	.byte 1;
+ocount:	.byte 1;
+bounce: .byte 1;
+fours:	.byte 1;
+seed:	.byte 2;
 
 .cseg
 
@@ -101,14 +114,15 @@ seed:		.byte 2;
 	jmp timer1
 .org OVF0addr
 	jmp timer0
+.org OVF4addr
+	jmp timer4
 
 ;MAIN
 RESET:
 	;INIT
 
 	;initialise variables
-	ldists bounce0, 0
-	ldists bounce1, 0
+	ldists ocount, 10;
 	ldi state, 3;
 	clr at;
 	clr wl;
@@ -152,8 +166,15 @@ RESET:
 	sts TCCR1A,temp
 	ldi temp,1<<CS10
 	sts TCCR1B,temp
+	rcall buzzeroff
+
+	;countdown
 	clr temp
-	sts TIMSK1,temp
+	sts TCCR4A,temp
+	ldi temp,2<<CS40
+	sts TCCR4B,temp
+	clr temp
+	sts TIMSK4,temp
 
 	;lcd
 	ser temp
@@ -220,12 +241,26 @@ RESET:
 	rjmp win;
 
 ;INTERRUPTS
+;BUTTONS
 EXT_INT0:
 	rjmp RESET
 
 EXT_INT1:
 	push temp  ; save register  
-	in temp, SREG  ; save SREG  
+ 	in temp, SREG  ; save SREG  
+ 	push temp  
+ 	ldscpi bounce, 0
+ 	brne pb1isalreadycounting
+ 		ldists bounce, 1;
+		ldi temp, 1<<TOIE0
+		sts TIMSK0, temp
+ 	pb1isalreadycounting:
+ 	pop temp  ; restore SREG  
+ 	out SREG, temp  
+ 	pop temp  ; restore register   
+ 	reti 
+
+pb1pressed:
 	push temp  
 	cpi at, notStarted
 	brne startGame
@@ -236,12 +271,69 @@ EXT_INT1:
 	brlo restartgame
 		rjmp RESET;
 	restartGame:
-	pop temp  ; restore SREG  
-	out SREG, temp  
 	pop temp  ; restore register
+	ret
+
+;TIMERS
+losejump:
+	clr temp
+	sts TIMSK4, temp
+	sei
+	rjmp lose
+
+timer4:
+	push temp
+	in temp, SREG
+	push temp
+	push temp2
+	push temp3
+
+	cpi at, inpot;
+	brne notinpot_t4
+		ldscpi fours, t;
+		brne full
+			ldists fours, 0
+			ldsdec count
+			breq losejump
+			do_lcd_command 0b11000000 + 11
+			rcall displayt
+			do_lcd_datai ' '
+			rcall buzzeron
+			rjmp endnotinpot_t4
+		full:
+			lds temp2, count
+			lds temp3, ocount
+			cp temp2, temp3
+
+			breq quarter
+				cpi temp, (t >> 2);
+				rjmp half;
+			quarter:
+				cpi temp, (t >> 1);
+			half:
+			brne endnotinpot_t4
+				rcall buzzeroff
+				rjmp endnotinpot_t4
+
+	notinpot_t4:
+		ldscpi fours, t >> 1;
+		brne endnotinpot_t4
+			clr temp;
+			sts TIMSK4, temp
+			rcall buzzeroff
+
+	endnotinpot_t4:
+	ldsinc fours
+
+	pop temp3
+	pop temp2
+	pop temp
+	out SREG, temp
+	pop temp
 	reti
 
 timer1:
+	sei
 	push temp
 	in temp, SREG
 	push temp
@@ -264,6 +356,8 @@ timer0:
 	push temp
 	in temp, SREG
 	push temp
+	push temp2
+	clr temp2
 
 	;generate rng
 	cpi at, notstarted
@@ -274,11 +368,33 @@ timer0:
 		rjmp generateRngSeedEnd
 
 	generateRngSeed:
+		inc temp2			
+	generateRngSeedEnd:
+	
+	;debounce pb1
+	ldscpi bounce, 0
+ 	breq pb0notcounting;
+ 		cpi temp, 4
+ 		brlo pb0IsStillCounting	
+ 			ldists bounce, 0
+ 			sbis PIND, 1
+ 			rcall pb1pressed
+ 			rjmp pb0notcounting
+ 		pb0IsStillCounting:
+ 			ldsinc bounce
+			rjmp pb0endnotcounting
+	pb0notcounting:
+		inc temp2
+	pb0endnotcounting:
+
+	cpi temp2, 2
+	brlo dontdisable
 		;disable timer
 		clr temp
-		sts TIMSK0,temp				
-	generateRngSeedEnd:
+		sts TIMSK0,temp	
+	dontdisable:
 
+	pop temp2
 	pop temp
 	out SREG, temp
 	pop temp
@@ -287,11 +403,18 @@ timer0:
 ;GAME STATES
 win:
 	ldi at, won
-	rjmp win
+	rjmp finished
 
 lose:
 	ldi at, lost
-	rjmp lose
+
+finished:
+	rcall buzzeron
+	rcall sleep_245ms
+	rcall sleep_750ms
+	rcall buzzeroff
+halt:
+	rjmp halt
 
 startingcountdown:
 	push temp
@@ -315,15 +438,12 @@ startingcountdown:
 	do_lcd_datai '.'
 	countdownLoop:
 		dec temp
-		do_lcd_command 0b11000000 + 13
+		do_lcd_command 0b11000000 + 12
 		do_lcd_data temp
-		ldi temp2,1<<TOIE1
-		sts TIMSK1,temp2
+		rcall buzzeron
 		rcall sleep_245ms
 
-		clr temp2
-		sts TIMSK1,temp2
-		cbi PORTB, buzzer
+		rcall buzzeroff
 		rcall sleep_750ms
 		cpi temp, '2'
 		brsh countdownLoop
@@ -335,14 +455,113 @@ find:
 	ret
 
 pot:
+	push temp
 	ldi at, inpot
+
+	do_lcd_command 0b00000001 
+	do_lcd_datai 'R'
+	do_lcd_datai 'e'
+	do_lcd_datai 's'
+	do_lcd_datai 'e'
+	do_lcd_datai 't'
+	do_lcd_datai ' '
+	do_lcd_datai 'P'
+	do_lcd_datai 'O'
+	do_lcd_datai 'T'
+	do_lcd_datai ' '
+	do_lcd_datai 't'
+	do_lcd_datai 'o'
+	do_lcd_datai ' '
+	do_lcd_datai '0'
+	do_lcd_command 0b11000000
+	do_lcd_datai 'R'
+	do_lcd_datai 'e'
+	do_lcd_datai 'm'
+	do_lcd_datai 'a'
+	do_lcd_datai 'i'
+	do_lcd_datai 'n'
+	do_lcd_datai 'i'
+	do_lcd_datai 'n'
+	do_lcd_datai 'g'
+	do_lcd_datai ':'
+	do_lcd_datai ' '
+
+	;initialise countdown
+	lds temp, ocount
+	sts count, temp
+	rcall displayt
+	rcall buzzeron
+	clr temp
+	sts fours, temp
+	ldi temp, 1 << TOIE4
+	sts TIMSK4, temp
+
+	loop:
+		rjmp loop;
+	pop temp
 	ret
 
 enter:
 	ldi at, inenter
 	ret
 
-displayw:
+;FUNCTIONS
+
+buzzeron:
+	push temp
+	ldi temp, 1 << TOIE1
+	sts TIMSK1, temp
+	pop temp
+	ret
+
+buzzeroff:
+	push temp
+	clr temp
+	sts TIMSK1, temp
+	cbi PORTB, buzzer
+	pop temp
+	ret
+
+displayt:
+	push temp
+	push temp2
+	push temp3
+
+	lds temp3, count;
+	clr temp;
+	bin_to_dec_t 10;
+	bin_to_dec_t 1;
+	cpi temp, 0;
+	brne dontprintzerot
+		do_lcd_datai '0'
+	dontprintzerot:
+
+	pop temp3
+	pop temp2
+	pop temp
+	ret;
+
+bin_to_dec_f:
+	push temp4
+	ldi temp4, '0'
+	bintodecloop:
+		cp temp3, temp2
+		brlo endbintodecloop
+			
+		sub temp3, temp2
+		inc temp4;
+		ser temp;
+		rjmp bintodecloop;
+	endbintodecloop:
+
+	cpi temp, 0
+	breq dontprintbtd;
+		do_lcd_data temp4
+	dontprintbtd:
+	pop temp4
+	ret
+
+/*displayw:
 	push temp
 	push temp2
 	push temp3
@@ -387,7 +606,7 @@ bin_to_dec_wf:
 		do_lcd_data temp4
 	dontprintbtdw:
 	pop temp4
-	ret
+	ret*/
 
 ;LCD CODE
 .equ LCD_RS = 7
