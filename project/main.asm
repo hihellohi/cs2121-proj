@@ -192,8 +192,6 @@ RESET:
 	notYetStarted:
 		cpi at, incountdown
 		brne notYetStarted
-
-	rcall displayw
 	
 	;START GAME HERE
 	rcall startingcountdown;
