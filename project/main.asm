@@ -99,6 +99,115 @@ seed:		.byte 2;
 .org OVF0addr
 	jmp timer0
 
+;MAIN
+RESET:
+	;INIT
+
+	;initialise variables
+	ldists bounce0, 0
+	ldists bounce1, 0
+	ldi state, 3;
+	clr at;
+	clr wl;
+	clr wh;
+	clr temp;
+	clr temp2;
+
+	;Lights
+	ser temp
+	out DDRC, temp
+	clr temp
+	out PORTC,temp
+
+	;stack pointer
+	ldi temp, low(RAMEND)
+	out SPL, temp
+	ldi temp, high(RAMEND)
+	out SPH, temp
+	
+	;push buttons
+	ldi temp, (2 << ISC00|2 << ISC10) ; set INT0 as falling-edge 
+	sts EICRA, temp ; edge triggered interrupt  
+	in temp, EIMSK  ; enable INT0 and INT1 
+	ori temp, (1<<INT0|1<<INT1)  
+	out EIMSK, temp 
+	cbi DDRD,0
+	cbi DDRD,1
+
+	;push button debouncer
+	clr temp
+	out TCCR0A,temp
+	ldi temp,2
+	out TCCR0B,temp
+	ldi temp,1<<TOIE0
+	sts TIMSK0,temp 
+
+	;lcd
+	ser temp
+	out DDRF, temp
+	out DDRA, temp
+	clr temp
+	out PORTF, temp
+	out PORTA, temp
+	
+	do_lcd_command 0b00111000 ; 2x5x7
+	rcall sleep_5ms
+	do_lcd_command 0b00111000 ; 2x5x7
+	rcall sleep_1ms
+	do_lcd_command 0b00111000 ; 2x5x7
+	do_lcd_command 0b00111000 ; 2x5x7
+	do_lcd_command 0b00001000 ; display off?
+	do_lcd_command 0b00000001 ; clear display
+	do_lcd_command 0b00000110 ; increment, no display shift
+	do_lcd_command 0b00001100 ; Cursor on, no bar, no blink
+
+	do_lcd_datai '2'
+	do_lcd_datai '1'
+	do_lcd_datai '2'
+	do_lcd_datai '1'
+	do_lcd_command 0b00010100 ; increment to the right
+	do_lcd_datai '1'
+	do_lcd_datai '6'
+	do_lcd_datai 's'
+	do_lcd_datai '1'
+
+	do_lcd_command 0b11000000
+
+	do_lcd_datai 'S'
+	do_lcd_datai 'a'
+	do_lcd_datai 'f'
+	do_lcd_datai 'e'
+	do_lcd_command 0b00010100 ; increment to the right
+
+	do_lcd_datai 'C'
+	do_lcd_datai 'r'
+	do_lcd_datai 'a'
+	do_lcd_datai 'c'
+	do_lcd_datai 'k'
+	do_lcd_datai 'e'
+	do_lcd_datai 'r'
+
+	sei;
+
+	notYetStarted:
+		cpi at, incountdown
+		brne notYetStarted
+
+	rcall displayw
+	
+	;START GAME HERE
+	rcall startingcountdown;
+
+	cpi state, 0;
+	breq end;
+		rcall pot;
+		rcall find;
+		dec state;
+	end:
+
+	rcall enter;
+	rjmp win;
+
 ;INTERRUPTS
 EXT_INT0:  
 	push temp  ; save register  
@@ -135,7 +244,11 @@ timer0:
 	;generate rng
 	cpi at, notstarted
 	brne generateRngSeed
-		adiw wh:wl, 7
+		adiw wh:wl, 63
+		adiw wh:wl, 63
+		adiw wh:wl, 63
+		adiw wh:wl, 63
+		sbiw wh:wl, 1
 	generateRngSeed:
 
 	;debounce pb0
@@ -257,115 +370,6 @@ bin_to_dec_wf:
 	dontprintbtdw:
 	pop temp4
 	ret
-
-;MAIN
-RESET:
-	;INIT
-
-	;initialise variables
-	ldists bounce0, 0
-	ldists bounce1, 0
-	ldi state, 3;
-	clr wl;
-	clr at;
-	clr wh;
-	clr temp;
-	clr temp2;
-
-	;Lights
-	ser temp
-	out DDRC, temp
-	clr temp
-	out PORTC,temp
-
-	;stack pointer
-	ldi temp, low(RAMEND)
-	out SPL, temp
-	ldi temp, high(RAMEND)
-	out SPH, temp
-	
-	;push buttons
-	ldi temp, (2 << ISC00|2 << ISC10) ; set INT0 as falling-edge 
-	sts EICRA, temp ; edge triggered interrupt  
-	in temp, EIMSK  ; enable INT0 and INT1 
-	ori temp, (1<<INT0|1<<INT1)  
-	out EIMSK, temp 
-	cbi DDRD,0
-	cbi DDRD,1
-
-	;push button debouncer
-	clr temp
-	out TCCR0A,temp
-	ldi temp,2
-	out TCCR0B,temp
-	ldi temp,1<<TOIE0
-	sts TIMSK0,temp 
-
-	;lcd
-	ser temp
-	out DDRF, temp
-	out DDRA, temp
-	clr temp
-	out PORTF, temp
-	out PORTA, temp
-	
-	do_lcd_command 0b00111000 ; 2x5x7
-	rcall sleep_5ms
-	do_lcd_command 0b00111000 ; 2x5x7
-	rcall sleep_1ms
-	do_lcd_command 0b00111000 ; 2x5x7
-	do_lcd_command 0b00111000 ; 2x5x7
-	do_lcd_command 0b00001000 ; display off?
-	do_lcd_command 0b00000001 ; clear display
-	do_lcd_command 0b00000110 ; increment, no display shift
-	do_lcd_command 0b00001100 ; Cursor on, no bar, no blink
-
-	do_lcd_datai '2'
-	do_lcd_datai '1'
-	do_lcd_datai '2'
-	do_lcd_datai '1'
-	do_lcd_command 0b00010100 ; increment to the right
-	do_lcd_datai '1'
-	do_lcd_datai '6'
-	do_lcd_datai 's'
-	do_lcd_datai '1'
-
-	do_lcd_command 0b11000000
-
-	do_lcd_datai 'S'
-	do_lcd_datai 'a'
-	do_lcd_datai 'f'
-	do_lcd_datai 'e'
-	do_lcd_command 0b00010100 ; increment to the right
-
-	do_lcd_datai 'C'
-	do_lcd_datai 'r'
-	do_lcd_datai 'a'
-	do_lcd_datai 'c'
-	do_lcd_datai 'k'
-	do_lcd_datai 'e'
-	do_lcd_datai 'r'
-
-	sei;
-
-	notYetStarted:
-		cpi at, incountdown
-		brne notYetStarted
-
-	rcall displayw
-	
-	;START GAME HERE
-	rcall startingcountdown;
-
-	cpi state, 0;
-	breq end;
-		rcall pot;
-		rcall find;
-		dec state;
-	end:
-
-	rcall enter;
-	rjmp win;
 
 ;LCD CODE
 .equ LCD_RS = 7
