@@ -81,6 +81,7 @@
 .set inenter=4
 .set won=5
 .set lost=6
+.set buzzer=0
 
 .dseg
 ;VARIABLES
@@ -96,6 +97,8 @@ seed:		.byte 2;
 .org INT0addr
 	jmp EXT_INT0
 	jmp EXT_INT1
+.org OVF1addr
+	jmp timer1
 .org OVF0addr
 	jmp timer0
 
@@ -137,10 +140,20 @@ RESET:
 	;push button debouncer
 	clr temp
 	out TCCR0A,temp
-	ldi temp,2
+	ldi temp,2<<CS00
 	out TCCR0B,temp
 	ldi temp,1<<TOIE0
 	sts TIMSK0,temp 
+
+	;beeper
+	sbi DDRB,buzzer
+
+	clr temp
+	sts TCCR1A,temp
+	ldi temp,1<<CS10
+	sts TCCR1B,temp
+	clr temp
+	sts TIMSK1,temp
 
 	;lcd
 	ser temp
@@ -235,6 +248,24 @@ EXT_INT1:
 	pop temp  ; restore register   
 	reti 
 
+timer1:
+	push temp
+	in temp, SREG
+	push temp
+	in temp, PORTB
+	andi temp, 1<<buzzer
+	cpi temp, 0
+	breq timer1clear
+		cbi PORTB, buzzer
+		rjmp timer1end
+	timer1clear:
+		sbi PORTB, buzzer
+	timer1end:
+	pop temp
+	out SREG, temp
+	pop temp
+	reti
+
 timer0:
 	;timer to debounce pb0 and pb1
 	push temp
@@ -310,6 +341,40 @@ lose:
 	rjmp lose
 
 startingcountdown:
+	push temp
+	ldi temp, '4'
+	do_lcd_command 0b11000000
+	do_lcd_datai 'S'
+	do_lcd_datai 't'
+	do_lcd_datai 'a'
+	do_lcd_datai 'r'
+	do_lcd_datai 't'
+	do_lcd_datai 'i'
+	do_lcd_datai 'n'
+	do_lcd_datai 'g'
+	do_lcd_datai ' '
+	do_lcd_datai 'i'
+	do_lcd_datai 'n'
+	do_lcd_datai ' '
+	do_lcd_datai ' '
+	do_lcd_datai '.'
+	do_lcd_datai '.'
+	do_lcd_datai '.'
+	countdownLoop:
+		dec temp
+		do_lcd_command 0b11000000 + 13
+		do_lcd_data temp
+		ldi temp2,1<<TOIE1
+		sts TIMSK1,temp2
+		rcall sleep_245ms
+
+		clr temp2
+		sts TIMSK1,temp2
+		cbi PORTB, buzzer
+		rcall sleep_750ms
+		cpi temp, '2'
+		brsh countdownLoop
+	pop temp
 	ret
 
 find:
@@ -450,4 +515,23 @@ sleep_5ms:
 	rcall sleep_1ms
 	rcall sleep_1ms
 	rcall sleep_1ms
+	ret
+
+sleep_245ms:
+	push temp;
+	ldi temp, -49;
+	delayloop_250ms:
+		rcall sleep_5ms
+		inc temp;
+		brne delayloop_250ms
+	pop temp
+	ret
+
+sleep_750ms:
+	rcall sleep_245ms
+	rcall sleep_245ms
+	rcall sleep_245ms
+	rcall sleep_5ms
+	rcall sleep_5ms
+	rcall sleep_5ms
 	ret
