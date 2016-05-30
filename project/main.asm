@@ -450,13 +450,57 @@ timer0:
 ;GAME STATES
 win:
 	ldi at, won
+	rcall buzzeron
+	do_lcd_command 0b00000001
+	do_lcd_datai 'G'
+	do_lcd_datai 'a'
+	do_lcd_datai 'm'
+	do_lcd_datai 'e'
+	do_lcd_datai ' '
+	do_lcd_datai 'c'
+	do_lcd_datai 'o'
+	do_lcd_datai 'm'
+	do_lcd_datai 'p'
+	do_lcd_datai 'l'
+	do_lcd_datai 'e'
+	do_lcd_datai 't'
+	do_lcd_datai 'e'
+	do_lcd_command 0b11000000
+	do_lcd_datai 'Y'
+	do_lcd_datai 'o'
+	do_lcd_datai 'u'
+	do_lcd_datai ' '
+	do_lcd_datai 'W'
+	do_lcd_datai 'i'
+	do_lcd_datai 'n'
+	do_lcd_datai '!'
 	rjmp finished
 
 lose:
 	ldi at, lost
+	rcall buzzeron
+	do_lcd_command 0b00000001
+	do_lcd_datai 'G'
+	do_lcd_datai 'a'
+	do_lcd_datai 'm'
+	do_lcd_datai 'e'
+	do_lcd_datai ' '
+	do_lcd_datai 'o'
+	do_lcd_datai 'v'
+	do_lcd_datai 'e'
+	do_lcd_datai 'r'
+	do_lcd_command 0b11000000
+	do_lcd_datai 'Y'
+	do_lcd_datai 'o'
+	do_lcd_datai 'u'
+	do_lcd_datai ' '
+	do_lcd_datai 'L'
+	do_lcd_datai 'o'
+	do_lcd_datai 's'
+	do_lcd_datai 'e'
+	do_lcd_datai '!'
 
 finished:
-	rcall buzzeron
 	rcall sleep_245ms
 	rcall sleep_750ms
 	rcall buzzeroff
