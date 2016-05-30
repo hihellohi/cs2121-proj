@@ -29,12 +29,12 @@
 	rcall lcd_wait
 	mov temp, r15
 .endmacro
-/*
+
 .macro bin_to_dec_w
 	ldi temp2, low(@0)
 	ldi temp3, high(@0)
 	rcall bin_to_dec_wf
-.endmacro*/
+.endmacro
 
 .macro bin_to_dec_t
 	ldi temp2, @0
@@ -100,7 +100,10 @@ count:	.byte 1;
 ocount:	.byte 1;
 bounce: .byte 1;
 fours:	.byte 1;
+wadc:	.byte 1;
 seed:	.byte 2;
+vadc:	.byte 2;
+potwin:	.byte 1;
 
 .cseg
 
@@ -114,6 +117,8 @@ seed:	.byte 2;
 	jmp timer1
 .org OVF0addr
 	jmp timer0
+.org 0x3A
+	jmp adcread
 .org OVF4addr
 	jmp timer4
 
@@ -123,6 +128,11 @@ RESET:
 
 	;initialise variables
 	ldists ocount, 10;
+	ldists count, 0;
+	ldists bounce, 0;
+	ldists fours, 0;
+	ldists wadc, 0;
+	ldists vadc, 0;
 	ldi state, 3;
 	clr at;
 	clr wl;
@@ -135,6 +145,10 @@ RESET:
 	out DDRC, temp
 	clr temp
 	out PORTC,temp
+	ldi temp, 3
+	out DDRG, temp
+	cbi PORTG, 0
+	cbi PORTG, 1
 
 	;stack pointer
 	ldi temp, low(RAMEND)
@@ -230,17 +244,33 @@ RESET:
 	;START GAME HERE
 	rcall startingcountdown;
 
-	cpi state, 0;
-	breq end;
+	mainloop:
+		cpi state, 0;
+		breq end;
+			
 		rcall pot;
 		rcall find;
 		dec state;
+		rjmp mainloop
 	end:
-
 	rcall enter;
 	rjmp win;
 
 ;INTERRUPTS
+adcread:
+	sei
+	push temp
+	in temp, SREG
+	push temp
+	lds wl, ADCL
+	lds wh, ADCH
+	ldists wadc, 0
+	;rcall displayw
+	pop temp
+	out SREG, temp
+	pop temp
+	reti
+
 ;BUTTONS
 EXT_INT0:
 	rjmp RESET
@@ -265,7 +295,6 @@ pb1pressed:
 	cpi at, notStarted
 	brne startGame
 		inc at
-		storemem seed
 	startGame:
 	cpi at, won
 	brlo restartgame
@@ -290,6 +319,11 @@ timer4:
 
 	cpi at, inpot;
 	brne notinpot_t4
+		ldscpi potwin, 0;
+		breq timer4notwin
+			inc temp;
+			sts potwin, temp;
+		timer4notwin:
 		ldscpi fours, t;
 		brne full
 			ldists fours, 0
@@ -311,9 +345,16 @@ timer4:
 			quarter:
 				cpi temp, (t >> 1);
 			half:
-			brne endnotinpot_t4
+			brne checkadc
 				rcall buzzeroff
 				rjmp endnotinpot_t4
+			checkadc:
+				andi temp, 3 ;POT FREQUENCY
+				cpi temp, 0;
+				brne endnotinpot_t4
+				ldscpi wadc, 1
+				breq endnotinpot_t4
+					rcall startAdcRead
 
 	notinpot_t4:
 		ldscpi fours, t >> 1;
@@ -358,13 +399,17 @@ timer0:
 	push temp
 	push temp2
 	clr temp2
+	push wl
+	push wh
 
 	;generate rng
 	cpi at, notstarted
 	brne generateRngSeed
+		loadmem seed
 		subi wl, low(-36277)
 		ldi temp, high(-36277)
-		sbc wl, temp
+		sbc wh, temp
+		storemem seed
 		rjmp generateRngSeedEnd
 
 	generateRngSeed:
@@ -394,6 +439,8 @@ timer0:
 		sts TIMSK0,temp	
 	dontdisable:
 
+	pop wh
+	pop wl
 	pop temp2
 	pop temp
 	out SREG, temp
@@ -456,9 +503,149 @@ find:
 
 pot:
 	push temp
+	push wl
+	push wh
+	push xl
+	push xh
+	push temp2
+	push temp3
+	push temp4
 	ldi at, inpot
 
-	do_lcd_command 0b00000001 
+	do_lcd_command 0b11000000
+	do_lcd_datai 'R'
+	do_lcd_datai 'e'
+	do_lcd_datai 'm'
+	do_lcd_datai 'a'
+	do_lcd_datai 'i'
+	do_lcd_datai 'n'
+	do_lcd_datai 'i'
+	do_lcd_datai 'n'
+	do_lcd_datai 'g'
+	do_lcd_datai ':'
+	do_lcd_datai ' '
+	
+	;choose number
+	loadmem seed
+	mov temp, wh
+	lsr temp
+	lsr temp
+	mov temp2, state
+	lsl temp2
+	inc temp2
+	mul temp, state
+	add r0, wl
+	add r1, wh
+	andi wh, 3
+	;ldi wh, high(500)
+	;ldi wl, low(500)
+	mov temp4, wh
+	mov temp3, wl
+
+	;initialise countdown
+	lds temp, ocount
+	sts count, temp
+	rcall displayt
+	rcall buzzeron
+	clr temp
+	sts fours, temp
+	ldi temp, 1 << TOIE4
+	sts TIMSK4, temp
+
+	retrypot:
+	rcall resetpottoz
+
+	potloop:
+		mov xl, temp3
+		mov xh, temp4
+		sub xl, wl
+		sbc xh, wh
+		brlo retrypot
+
+		cpi xh, 0
+		brne pot8lightoff
+
+		;bottom 8 lights
+		sbiw x, 1
+		cpi xl, 48
+		brsh pot8lightoff
+			ser temp
+			out PORTC, temp
+			rjmp endpot8light
+		pot8lightoff:
+			clr temp
+			out PORTC, temp
+			rjmp pot9lightoff
+		endpot8light:
+
+		;9th light
+		cpi xl, 32
+		brsh pot9lightoff
+			sbi PORTG, 0
+			rjmp endpot9light
+		pot9lightoff:
+			cbi PORTG, 0
+			rjmp pot10lightoff
+		endpot9light:
+
+		;last light
+		cpi xl, 16
+		brsh pot10lightoff
+			sbi PORTG, 1
+
+			ldscpi potwin, 0
+			brne potwinalreadystarted
+				inc temp;
+				sts potwin, temp
+			potwinalreadystarted:
+
+			cpi temp, t+1
+			brsh potfin
+			rjmp endpot10light
+		pot10lightoff:
+			cbi PORTG, 1
+			ldists potwin, 0
+		endpot10light:
+
+	rjmp potloop;
+
+	potfin:
+	clr temp
+	out PORTC, temp
+	cbi PORTG, 0
+	cbi PORTG, 1
+
+	rcall buzzeron
+	ldists fours, 0
+
+	ldi at, infind
+		
+	pop temp4
+	pop temp3
+	pop temp2
+	pop xh
+	pop xl
+	pop wh
+	pop wl
+	pop temp
+	ret
+
+enter:
+	ldi at, inenter
+	ret
+
+;FUNCTIONS
+
+resetpottoz:
+	push temp
+
+	clr temp
+	out PORTC, temp
+	cbi PORTG, 1
+	cbi PORTG, 0
+
+	cli
+	do_lcd_command 0b00000010 
 	do_lcd_datai 'R'
 	do_lcd_datai 'e'
 	do_lcd_datai 's'
@@ -473,39 +660,46 @@ pot:
 	do_lcd_datai 'o'
 	do_lcd_datai ' '
 	do_lcd_datai '0'
-	do_lcd_command 0b11000000
-	do_lcd_datai 'R'
-	do_lcd_datai 'e'
-	do_lcd_datai 'm'
-	do_lcd_datai 'a'
+	sei
+
+	resetpottozloop:
+		cpi wl, 0;
+		brne resetpottozloop
+		cpi wh, 0;
+		brne resetpottozloop
+
+	cli
+	do_lcd_command 0b00000010 
+	do_lcd_datai 'F'
 	do_lcd_datai 'i'
 	do_lcd_datai 'n'
-	do_lcd_datai 'i'
-	do_lcd_datai 'n'
-	do_lcd_datai 'g'
-	do_lcd_datai ':'
+	do_lcd_datai 'd'
 	do_lcd_datai ' '
+	do_lcd_datai 'P'
+	do_lcd_datai 'O'
+	do_lcd_datai 'T'
+	do_lcd_datai ' '
+	do_lcd_datai 'P'
+	do_lcd_datai 'o'
+	do_lcd_datai 's'
+	do_lcd_datai ' '
+	do_lcd_datai ' '
+	sei
 
-	;initialise countdown
-	lds temp, ocount
-	sts count, temp
-	rcall displayt
-	rcall buzzeron
-	clr temp
-	sts fours, temp
-	ldi temp, 1 << TOIE4
-	sts TIMSK4, temp
-
-	loop:
-		rjmp loop;
 	pop temp
 	ret
 
-enter:
-	ldi at, inenter
+startAdcRead:
+	push temp
+	ldists wadc, 1
+	ldi temp, (3 << REFS0) | (0 << ADLAR) | (0 << MUX0);
+	sts ADMUX, temp
+	ldi temp, (1 << MUX5)
+	sts ADCSRB, temp
+	ldi temp,  (1 << ADEN) | (1 << ADSC) | (1 << ADIE) | (5 << ADPS0);
+	sts ADCSRA, temp
+	pop temp
 	ret
-
-;FUNCTIONS
 
 buzzeron:
 	push temp
@@ -561,7 +755,7 @@ bin_to_dec_f:
 	pop temp4
 	ret
 
-/*displayw:
+displayw:
 	push temp
 	push temp2
 	push temp3
@@ -576,9 +770,9 @@ bin_to_dec_f:
 	bin_to_dec_w 10;
 	bin_to_dec_w 1;
 	cpi temp, 0;
-	brne dontprintzerot
+	brne dontprintzerow
 		do_lcd_datai '0'
-	dontprintzerot:
+	dontprintzerow:
 
 	pop wl
 	pop wh
@@ -606,7 +800,7 @@ bin_to_dec_wf:
 		do_lcd_data temp4
 	dontprintbtdw:
 	pop temp4
-	ret*/
+	ret
 
 ;LCD CODE
 .equ LCD_RS = 7
