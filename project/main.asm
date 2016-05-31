@@ -104,7 +104,6 @@ shifting:
 		mul temp4,temp3; 4xrow
 		mov temp4,r0
 		mov temp3,wh
-		inc temp3; col+1
 		add temp3, temp4;=(col+1)+4xrow
 		sts keyButton,temp3 ;stores in data memory the correct one
 .endmacro
@@ -270,10 +269,8 @@ RESET:
 		brne notYetStarted
 
 	;rcall displayw
-
 	
 	;START GAME HERE
-	
 	rcall startingcountdown;
 
 	cpi state, 0;
@@ -394,12 +391,12 @@ timer5:
 	clr temp2
 	sts TempCounter,temp2 ; resets the timer	
 	clr temp ; may need to change this for the back lighting 
-	;out PORTE,temp ; stop the motor from running< when more things are added, it doesnt work anymore
+	out PORTE,temp ; stop the motor from running< when more things are added, it doesnt work anymore
 	finish:
-	pop wh
-	pop wl
 	pop temp
 	out SREG,temp
+	pop wh
+	pop wl
 	pop temp2
 	pop temp
 	reti
