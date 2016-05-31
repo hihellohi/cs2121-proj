@@ -73,6 +73,53 @@
 	sts @0, temp
 .endmacro
 
+.macro shiftright
+	ldi temp,@1
+shifting:
+	cpi temp,0
+	breq done
+		lsr @0
+		dec temp
+		rjmp shifting
+	done:
+.endmacro
+
+.macro compNum
+	lds temp,@0
+	lds temp2,@1
+	cp temp,temp2
+	breq changeNum
+		changeNum:
+			lsr temp2
+			inc temp2
+			cp temp,temp2
+			breq changeNum
+			sts @1,temp2
+			rjmp loopy
+.endmacro
+
+.macro printwtf
+		push wl
+		push wh
+		clr wh
+		mov wl,@0
+		do_lcd_command 0b00010100 ; increment to the right
+		rcall displayw
+		pop wh
+		pop wl
+.endmacro
+
+.macro convert_number
+		mov temp4,wl; store row in temp4
+		ldi temp3,4
+		mul temp4,temp3; 4xrow
+		mov temp4,r0
+		mov temp3,wh
+		inc temp3; col+1
+		add temp3, temp4;=(col+1)+4xrow
+		sts keyButton,temp3 ;stores in data memory the correct one
+.endmacro
+
 ;REGISTERS
 .def temp = r16
 .def temp2 = r17
@@ -101,9 +148,17 @@ ocount:	.byte 1;
 bounce: .byte 1;
 fours:	.byte 1;
 wadc:	.byte 1;
-seed:	.byte 2;
 vadc:	.byte 2;
 potwin:	.byte 1;
+bounce0:	.byte 1;
+bounce1:	.byte 1;
+seed:		.byte 2;
+RandNum:	.byte 3;
+keyFlag:    .byte 1;
+keyButton:  .byte 1;
+keyFound:   .byte 1;
+keyRandNum:	.byte 1
+TempCounter:.byte 1
 
 .cseg
 
@@ -121,6 +176,8 @@ potwin:	.byte 1;
 	jmp adcread
 .org OVF4addr
 	jmp timer4
+.org OVF5addr
+	jmp timer5
 
 ;MAIN
 RESET:
@@ -133,13 +190,20 @@ RESET:
 	ldists fours, 0;
 	ldists wadc, 0;
 	ldists vadc, 0;
+	ldists bounce0, 0
+	ldists bounce1, 0
+	ldists keyFlag,0
+	ldists keyFound,0
+	ldists keyRandNum,255
+	ldists keyButton,255
+	ldists TempCounter,0
 	ldi state, 3;
 	clr at;
 	clr wl;
 	clr wh;
 	clr temp;
 	clr temp2;
-
+	
 	;Lights
 	ser temp
 	out DDRC, temp
@@ -189,6 +253,22 @@ RESET:
 	sts TCCR4B,temp
 	clr temp
 	sts TIMSK4,temp
+
+	;keyboard
+	ldi temp,0xF0
+	sts DDRL,temp ;0b11110000
+	;motor
+	ldi temp,1<<4
+	out DDRE,temp
+	
+	;keyboard hold- one second
+	clr temp
+	sts TCCR5A,temp
+	ldi temp,1<<CS50 ;find a good prescalar
+	sts TCCR5B,temp
+	clr temp
+	;ldi temp,1<<TOIE5
+	sts TIMSK5,temp ; starts the timer counter now
 
 	;lcd
 	ser temp
@@ -242,6 +322,7 @@ RESET:
 		brne notYetStarted
 	
 	;START GAME HERE
+	
 	rcall startingcountdown;
 
 	mainloop:
@@ -254,7 +335,7 @@ RESET:
 		rjmp mainloop
 	end:
 	rcall enter;
-	rjmp win;
+	rjmp win;	
 
 ;INTERRUPTS
 adcread:
@@ -290,8 +371,48 @@ EXT_INT1:
  	pop temp  ; restore register   
  	reti 
 
+timer5:
+	push temp
+	push temp2
+	;push temp3
+	;push temp4
+	push wl
+	push wh
+	in temp,SREG
+	push temp
+	lds temp, keyRandNum
+	lds temp2,keyButton
+	cp temp, temp2
+	brne wrongkey
+		ldscpi keyFlag,1
+		brne wrongkey ; it is not being held down
+			ldi temp,1<<4
+			out PORTE,temp;start RUNNING the motor
+			lds temp2,TempCounter
+			inc temp2
+			cpi temp2, 244 ; 244 is one second, if it is, ->jump to finish :)
+			brne continue
+					ldists keyFound,1
+					rjmp finish
+			continue:
+			sts TempCounter,temp2 ; if not one second yet -> jump to finish :)
+			rjmp finish
+	wrongkey:
+	clr temp2
+	sts TempCounter,temp2 ; resets the timer	
+	clr temp ; may need to change this for the back lighting 
+	;out PORTE,temp ; stop the motor from running< when more things are added, it doesnt work anymore
+	finish:
+	pop wh
+	pop wl
+	pop temp
+	out SREG,temp
+	pop temp2
+	pop temp
+	reti
+
 pb1pressed:
-	push temp  
+	push temp
 	cpi at, notStarted
 	brne startGame
 		inc at
@@ -543,6 +664,65 @@ startingcountdown:
 
 find:
 	ldi at, infind
+	push wl
+	push wh
+	push temp
+	push temp2
+	push temp3
+	push yh
+	push yl
+	cpi state,3 ; if not the first time going through, dont need to find the numbers
+	brne next
+		loadmem seed ; loads the random generator number
+		mov temp2,wl
+		andi temp2,0xF ; gets rid of the higher 4 bits
+		sts RandNum,temp2
+		do_lcd_command 0b00000001 ; clear display
+		mov temp2,wl
+		shiftright temp2,4
+		mov wl,temp2
+		sts RandNum+1,temp2
+		mov temp2,wh
+		andi temp2,0xF
+		sts RandNum+2,temp2
+		printwtf temp2
+
+		;rcall differentnumber -something buggy about this as well
+
+	
+next:
+	mov temp2,state
+	ldi yl,low(RandNum)
+	ldi yh,high(RandNum)
+	loops:
+		ld temp,y+ ; loop it until it is the correct number
+		dec temp2
+		cpi temp2,0
+		brne loops
+	
+	sts keyRandNum,temp
+	printwtf temp
+	ldi temp,1<<TOIE5
+	sts TIMSK5,temp ; starts the timer counter now
+	input:
+		rcall keyboard
+		ldscpi keyFound,0 ; checks if the button is found
+		breq input
+	ser temp
+	out PORTC,temp
+	clr temp ;may not be the best place to put it but i shall SEE
+	
+	sts TIMSK5,temp ; turns the timer off
+	ldists keyFound,0; resets the button back
+	ldists keyRandNum,255
+	ldists keyButton,245
+	pop yl
+	pop yh
+	pop temp3
+	pop temp2
+	pop temp
+	pop wh
+	pop wl
 	ret
 
 pot:
@@ -807,7 +987,7 @@ displayw:
 	push wl
 
 	clr temp;
-	do_lcd_command 0b00000001 ; clear display
+	;do_lcd_command 0b00000001 ; clear display
 	bin_to_dec_w 10000;
 	bin_to_dec_w 1000;
 	bin_to_dec_w 100;
@@ -846,6 +1026,178 @@ bin_to_dec_wf:
 	pop temp4
 	ret
 
+keyboard:
+	push wh; number of columns
+	push wl; number of rows
+	push temp; cmask
+	push temp2;rmask
+	push temp3
+	push temp4
+	clr wh
+	clr wl
+	clr temp
+	clr temp2
+	clr temp3
+	clr temp4
+
+
+
+	start:
+		ldi temp,0b11101111 ;temp=cmask
+		clr wh			; number of columns
+	col_loop:
+		cpi wh,4
+		breq finish1
+		sts PORTL,temp ;port L 0b11101111
+		ldi temp3,0xFF ; random number
+	delay: 
+		dec temp3
+		brne delay
+		lds temp4,PINL;	0b0000111
+		mov temp3, temp4
+		andi temp3,0xF;0b00001111
+		cpi temp3,0xF
+		breq next_col
+		ldi wl, 0 ; number of rows
+		ldi temp2,1
+			row_loop:
+				cpi temp2, 0x10
+				breq next_col
+				and temp3,temp2
+				cpi temp3, 0 ; number is found
+				mov temp3, temp4
+				brne not_found
+					rcall debounce
+					rjmp finish1
+				not_found:
+				lsl temp2; rmask
+				inc wl
+				rjmp row_loop
+		next_col:
+		lsl temp
+		inc temp
+		inc wh ; increment number of columns
+		jmp col_loop
+		finish1:
+	pop temp4
+	pop temp3
+	pop temp2
+	pop temp
+	pop wl
+	pop wh
+	ret
+
+	debounce:
+		push temp2
+		push temp3
+		push temp4
+		push wl
+		push wh
+		rcall sleep_5ms ; 
+		rcall sleep_5ms
+		clr temp3
+		clr temp4
+		lds temp4,PINL;
+		and temp4, temp2; lds temp4 with rmask 
+		cpi temp4, 0;
+		brne finish_2 ; may see where if it's just a random low
+		push temp ; using it part of the macro, dont want to ruin it
+		ldists keyFlag,1
+		pop temp
+		convert_number ; stores it into temp3
+		printwtf temp3
+		nobounce:
+			lds temp4,PINL;0b10001000
+			and temp4, temp2; still loops it until it is high again
+			cpi temp4, 0;
+			breq nobounce
+		ldists keyFlag,0
+		rcall sleep_5ms
+		rcall sleep_5ms
+		finish_2:
+		pop wh
+		pop wl
+		pop temp4
+		pop temp3
+		pop temp2
+		ret
+
+differentnumber:
+push temp
+push temp2
+loopy:
+	compNum RandNum,RandNum+1
+	compNum RandNum,RandNum+2
+	compNum RandNum+1,RandNum+2
+pop temp2
+pop temp
+ret
+
+printwtf1:
+		push wl
+		push wh
+		clr wh
+		do_lcd_command 0b00010100 ; increment to the right
+		rcall displayw
+		pop wh
+		pop wl
+		ret
+
+
+	/*
+convert:
+	rcall sleep_5ms
+	rcall sleep_5ms
+	lds temp4,PINL
+	and temp4, temp2;
+	cpi temp4, 0;
+	brne main
+	nobounce:
+		;out PORTC,cmask
+		lds temp4,PINL
+		and temp4, temp2;
+		cpi temp4, 0;
+		breq nobounce
+	rcall sleep_5ms
+	rcall sleep_5ms
+
+	cpi wh, 3;
+	breq symbol;
+	cpi row, 3
+	breq zasdf;
+	e:
+	mov temp,row;
+	add temp,row;
+	add temp,row;
+	add temp,col;
+	inc temp;
+	back:
+	rjmp number
+
+zasdf:
+	cpi col,2;
+	breq mainerino;
+	cpi col,0;
+	breq asterisk;
+	clr temp
+	rjmp back
+
+asterisk:
+	clr acc;
+	clr temp3
+	rcall display
+	rjmp main
+
+symbol:
+	cpi row,0;
+	breq addition
+	cpi row,1;
+	breq subtraction
+	cpi row,2;
+	breq multiplication
+	cpi row,3;
+	breq division
+	*/
 ;LCD CODE
 .equ LCD_RS = 7
 .equ LCD_E = 6
