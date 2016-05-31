@@ -154,6 +154,7 @@ bounce1:	.byte 1;
 seed:		.byte 2;
 RandNum:	.byte 3;
 keyFlag:    .byte 1;
+keyFlag1:	.byte 1
 keyButton:  .byte 1;
 keyFound:   .byte 1;
 keyRandNum:	.byte 1
@@ -193,9 +194,10 @@ RESET:
 	ldists bounce0, 0
 	ldists bounce1, 0
 	ldists keyFlag,0
+	ldists keyFlag,1
 	ldists keyFound,0
 	ldists keyRandNum,255
-	ldists keyButton,255
+	ldists keyButton,245
 	ldists TempCounter,0
 	ldists adcreading,0
 	ldi state, 3;
@@ -327,7 +329,7 @@ RESET:
 	
 	;START GAME HERE
 	rcall startingcountdown;
-	/*
+	
 	mainloop:
 		cpi state, 0;
 		breq end;
@@ -337,7 +339,7 @@ RESET:
 		dec state;
 		rjmp mainloop
 	end:
-	*/
+	
 	rcall enter;
 	rjmp win;	
 
@@ -702,14 +704,18 @@ find:
 		loadmem seed ; loads the random generator number
 		mov temp2,wl
 		andi temp2,0xF ; gets rid of the higher 4 bits
+		;do_lcd_command 0b00000001
+		;printwtf temp2
 		sts RandNum,temp2
 		mov temp2,wl
 		shiftright temp2,4
 		mov wl,temp2
+		;printwtf temp2
 		sts RandNum+1,temp2
 		mov temp2,wh
 		andi temp2,0xF
 		sts RandNum+2,temp2
+		;printwtf temp2
 
 		;rcall differentnumber -something buggy about this as well
 
@@ -881,6 +887,11 @@ pot:
 	;ldists fours,0
 enter:
 	ldi at, inenter
+	push yl
+	push yh
+	push temp
+	push temp2
+	push state
 	do_lcd_command 0b00000001 ; clear display
 	do_lcd_datai 'E'
 	do_lcd_datai 'n'
@@ -892,26 +903,34 @@ enter:
 	do_lcd_datai 'o'
 	do_lcd_datai 'd'
 	do_lcd_datai 'e'
-	;do_lcd_command 0b11000000
-	push yl
-	push yh
-	push temp
-	push temp2
-	push state
+	ldists keyFlag1,0
+	rjmp start_enter
 	enter_again:
-		do_lcd_command 0b11000000 + 15
+		do_lcd_command 0b11000000
+		do_lcd_datai ' '
+		do_lcd_datai ' '
+		do_lcd_datai ' '
+	start_enter:
 		do_lcd_command 0b11000000
 		ldi state,3
 		ldi yl,low(RandNum+2)
 		ldi yh,high(RandNum+2)
-			press_number:
-			cpi state,0
-			breq finish_entering
+		press_number:
+		cpi state,0
+		breq finish_entering
+			repeat_key:
 			rcall keyboard
-			lds temp,keyButton
+			ldscpi keyFlag1,0 ; button not pressed
+			breq repeat_key
+		ldists keyFlag1,0
+		lds temp,keyButton
+		cpi state,3
+		brne store_y
+		ld temp2,y
+		rjmp compare_y
+			store_y:
 			ld temp2,-y
-			;printwtf temp
-			;printwtf temp2
+		compare_y:
 			cp temp,temp2
 			brne enter_again
 			do_lcd_datai '*'
@@ -1115,6 +1134,7 @@ keyboard:
 	col_loop:
 		cpi wh,4
 		breq finish1
+		;breq start
 		sts PORTL,temp ;port L 0b11101111
 		ldi temp3,0xFF ; random number
 	delay: 
@@ -1170,6 +1190,7 @@ keyboard:
 		brne finish_2 ; may see where if it's just a random low
 		push temp ; using it part of the macro, dont want to ruin it
 		ldists keyFlag,1
+		ldists keyFlag1,1
 		pop temp
 		convert_number ; stores it into temp3
 		nobounce:
