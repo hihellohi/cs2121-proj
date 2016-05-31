@@ -88,14 +88,11 @@ shifting:
 	lds temp,@0
 	lds temp2,@1
 	cp temp,temp2
-	breq changeNum
-		changeNum:
-			lsr temp2
-			inc temp2
-			cp temp,temp2
-			breq changeNum
-			sts @1,temp2
-			rjmp loopy
+.endmacro
+
+.macro changeNum
+		sts @0,temp2
+		rjmp loopy
 .endmacro
 
 .macro printwtf
@@ -334,7 +331,7 @@ RESET:
 		cpi state, 0;
 		breq end;
 			
-		rcall pot;
+		;rcall pot;
 		rcall find;
 		dec state;
 		rjmp mainloop
@@ -699,27 +696,29 @@ find:
 	push temp3
 	push yh
 	push yl
+	;ldi temp, 1 << TOIE4
+	;sts TIMSK4, temp
+	;rcall buzzeron
+	;ldists fours, 0
 	cpi state,3 ; if not the first time going through, dont need to find the numbers
 	brne next
 		loadmem seed ; loads the random generator number
 		mov temp2,wl
 		andi temp2,0xF ; gets rid of the higher 4 bits
-		;do_lcd_command 0b00000001
-		;printwtf temp2
+		do_lcd_command 0b00000001
+		printwtf temp2
 		sts RandNum,temp2
 		mov temp2,wl
 		shiftright temp2,4
 		mov wl,temp2
-		;printwtf temp2
+		printwtf temp2
 		sts RandNum+1,temp2
 		mov temp2,wh
 		andi temp2,0xF
 		sts RandNum+2,temp2
 		;printwtf temp2
 
-		;rcall differentnumber -something buggy about this as well
-
-	
+		rcall differentnumber; -something buggy about this as well
 next:
 	mov temp2,state
 	ldi yl,low(RandNum)
@@ -731,6 +730,7 @@ next:
 		brne loops
 	
 	sts keyRandNum,temp
+	rcall print_positionfound
 	ldi temp,1<<TOIE5
 	sts TIMSK5,temp ; starts the timer counter now
 	input:
@@ -915,6 +915,7 @@ enter:
 		ldi state,3
 		ldi yl,low(RandNum+2)
 		ldi yh,high(RandNum+2)
+		ld temp2,y
 		press_number:
 		cpi state,0
 		breq finish_entering
@@ -923,14 +924,11 @@ enter:
 			ldscpi keyFlag1,0 ; button not pressed
 			breq repeat_key
 		ldists keyFlag1,0
-		lds temp,keyButton
 		cpi state,3
-		brne store_y
-		ld temp2,y
-		rjmp compare_y
-			store_y:
+		breq compare_y
 			ld temp2,-y
 		compare_y:
+			lds temp,keyButton
 			cp temp,temp2
 			brne enter_again
 			do_lcd_datai '*'
@@ -1214,12 +1212,71 @@ push temp
 push temp2
 loopy:
 	compNum RandNum,RandNum+1
-	compNum RandNum,RandNum+2
-	compNum RandNum+1,RandNum+2
+	brne next_compare
+	inc temp2
+	cpi temp2,16
+	brne store
+	ldi temp2,0
+		store:
+		changeNum RandNum+1
+
+		next_compare:
+		compNum RandNum,RandNum+2
+		brne next_compare1
+		inc temp2
+		cpi temp2,16
+		brne store_1
+		ldi temp2,0
+			store_1:
+			changeNum RandNum+2
+
+			next_compare1:
+			compNum RandNum+1,RandNum+2
+			brne done_compare
+			inc temp2
+			cpi temp2,16
+			brne store_2
+			ldi temp2,0
+				store_2:
+				changeNum RandNum+2
+done_compare:
 pop temp2
 pop temp
 ret
 
+print_positionfound:
+	do_lcd_datai 'P'
+	do_lcd_datai 'o'
+	do_lcd_datai 's'
+	do_lcd_datai 'i'
+	do_lcd_datai 't'
+	do_lcd_datai 'i'
+	do_lcd_datai 'o'
+	do_lcd_datai 'n'
+	do_lcd_datai ' '
+	do_lcd_datai 'f'
+	do_lcd_datai 'o'
+	do_lcd_datai 'u'
+	do_lcd_datai 'n'
+	do_lcd_datai 'd'
+	do_lcd_datai '!'
+	do_lcd_command 0b11000000
+	do_lcd_datai 'S'
+	do_lcd_datai 'c'
+	do_lcd_datai 'a'
+	do_lcd_datai 'n'
+	do_lcd_datai ' '
+	do_lcd_datai 'f'
+	do_lcd_datai 'o'
+	do_lcd_datai 'r'
+	do_lcd_datai ' '
+	do_lcd_datai 'n'
+	do_lcd_datai 'u'
+	do_lcd_datai 'm'
+	do_lcd_datai 'b'
+	do_lcd_datai 'e'
+	do_lcd_datai 'r'
+ret
 
 
 
