@@ -115,7 +115,6 @@ shifting:
 		mul temp4,temp3; 4xrow
 		mov temp4,r0
 		mov temp3,wh
-		inc temp3; col+1
 		add temp3, temp4;=(col+1)+4xrow
 		sts keyButton,temp3 ;stores in data memory the correct one
 .endmacro
@@ -159,6 +158,7 @@ keyButton:  .byte 1;
 keyFound:   .byte 1;
 keyRandNum:	.byte 1
 TempCounter:.byte 1
+adcreading:	.byte 2
 
 .cseg
 
@@ -197,6 +197,7 @@ RESET:
 	ldists keyRandNum,255
 	ldists keyButton,255
 	ldists TempCounter,0
+	ldists adcreading,0
 	ldi state, 3;
 	clr at;
 	clr wl;
@@ -213,6 +214,9 @@ RESET:
 	out DDRG, temp
 	cbi PORTG, 0
 	cbi PORTG, 1
+
+	sbi DDRA, 1
+	cbi PORTA, 1
 
 	;stack pointer
 	ldi temp, low(RAMEND)
@@ -322,7 +326,6 @@ RESET:
 		brne notYetStarted
 	
 	;START GAME HERE
-	
 	rcall startingcountdown;
 
 	mainloop:
@@ -346,6 +349,7 @@ adcread:
 	lds wl, ADCL
 	lds wh, ADCH
 	ldists wadc, 0
+	storemem adcreading
 	;rcall displayw
 	pop temp
 	out SREG, temp
@@ -401,12 +405,12 @@ timer5:
 	clr temp2
 	sts TempCounter,temp2 ; resets the timer	
 	clr temp ; may need to change this for the back lighting 
-	;out PORTE,temp ; stop the motor from running< when more things are added, it doesnt work anymore
+	out PORTE,temp ; stop the motor from running< when more things are added, it doesnt work anymore
 	finish:
-	pop wh
-	pop wl
 	pop temp
 	out SREG,temp
+	pop wh
+	pop wl
 	pop temp2
 	pop temp
 	reti
@@ -478,12 +482,28 @@ timer4:
 					rcall startAdcRead
 
 	notinpot_t4:
-		ldscpi fours, t >> 1;
-		brne endnotinpot_t4
-			clr temp;
-			sts TIMSK4, temp
-			rcall buzzeroff
+		cpi at, won
+		breq winningt4
+			ldscpi fours, t >> 1;
+			brne endnotinpot_t4
+				clr temp;
+				sts TIMSK4, temp
+				rcall buzzeroff
+				rjmp endnotinpot_t4
+		winningt4:
+			lds temp, fours
+			andi temp, 15
 
+			cpi temp, 0
+			brne turnont4
+				sbi PORTA, 1
+				rjmp endnotinpot_t4
+			turnont4:
+
+			cpi temp, 8
+			brne turnofft4
+				cbi PORTA, 1
+			turnofft4:
 	endnotinpot_t4:
 	ldsinc fours
 
@@ -525,16 +545,19 @@ timer0:
 
 	;generate rng
 	cpi at, notstarted
-	brne generateRngSeed
-		loadmem seed
+	breq generateRngSeed
+	cpi at, inpot
+	breq generateRngSeed
+		inc temp2
+		rjmp generateRngSeedEnd
+
+	generateRngSeed:
+			loadmem seed
 		subi wl, low(-36277)
 		ldi temp, high(-36277)
 		sbc wh, temp
 		storemem seed
-		rjmp generateRngSeedEnd
-
-	generateRngSeed:
-		inc temp2			
+			
 	generateRngSeedEnd:
 	
 	;debounce pb1
@@ -572,6 +595,8 @@ timer0:
 win:
 	ldi at, won
 	rcall buzzeron
+	ldi temp, 1 << TOIE4
+	sts TIMSK4, temp
 	do_lcd_command 0b00000001
 	do_lcd_datai 'G'
 	do_lcd_datai 'a'
@@ -751,7 +776,7 @@ pot:
 	
 	;choose number
 	loadmem seed
-	mov temp, wh
+/*	mov temp, wh
 	lsr temp
 	lsr temp
 	mov temp2, state
@@ -759,10 +784,8 @@ pot:
 	inc temp2
 	mul temp, state
 	add r0, wl
-	add r1, wh
+	add r1, wh*/
 	andi wh, 3
-	;ldi wh, high(500)
-	;ldi wl, low(500)
 	mov temp4, wh
 	mov temp3, wl
 
@@ -780,6 +803,7 @@ pot:
 	rcall resetpottoz
 
 	potloop:
+		loadmem adcreading
 		mov xl, temp3
 		mov xh, temp4
 		sub xl, wl
@@ -791,7 +815,7 @@ pot:
 
 		;bottom 8 lights
 		sbiw x, 1
-		cpi xl, 48
+		cpi xl, 48 << 1
 		brsh pot8lightoff
 			ser temp
 			out PORTC, temp
@@ -803,7 +827,7 @@ pot:
 		endpot8light:
 
 		;9th light
-		cpi xl, 32
+		cpi xl, 32 << 1
 		brsh pot9lightoff
 			sbi PORTG, 0
 			rjmp endpot9light
@@ -813,7 +837,7 @@ pot:
 		endpot9light:
 
 		;last light
-		cpi xl, 16
+		cpi xl, 16 << 1
 		brsh pot10lightoff
 			sbi PORTG, 1
 
