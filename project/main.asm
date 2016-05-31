@@ -321,9 +321,30 @@ RESET:
 
 	sei;
 
+	ldi temp, 0x7F
+	sts PORTL, temp
+	lds temp2, ocount
 	notYetStarted:
+
+		lds temp, PINL
+		andi temp, 0xF
+		cpi temp, 0xF
+		breq nobutton
+			sbrs temp, 0
+				ldi temp2, 20
+			sbrs temp, 1
+				ldi temp2, 15
+			sbrs temp, 2
+				ldi temp2, 10
+			sbrs temp, 3
+				ldi temp3, 5
+		nobutton:
 		cpi at, incountdown
 		brne notYetStarted
+
+	sts ocount, temp2
+	clr temp
+	sts PORTL, temp
 	
 	;START GAME HERE
 	rcall startingcountdown;
