@@ -115,7 +115,6 @@ shifting:
 		mul temp4,temp3; 4xrow
 		mov temp4,r0
 		mov temp3,wh
-		inc temp3; col+1
 		add temp3, temp4;=(col+1)+4xrow
 		sts keyButton,temp3 ;stores in data memory the correct one
 .endmacro
@@ -324,7 +323,7 @@ RESET:
 	;START GAME HERE
 	
 	rcall startingcountdown;
-
+	/*
 	mainloop:
 		cpi state, 0;
 		breq end;
@@ -334,6 +333,7 @@ RESET:
 		dec state;
 		rjmp mainloop
 	end:
+	*/
 	rcall enter;
 	rjmp win;	
 
@@ -401,12 +401,12 @@ timer5:
 	clr temp2
 	sts TempCounter,temp2 ; resets the timer	
 	clr temp ; may need to change this for the back lighting 
-	;out PORTE,temp ; stop the motor from running< when more things are added, it doesnt work anymore
+	out PORTE,temp ; stop the motor from running< when more things are added, it doesnt work anymore
 	finish:
-	pop wh
-	pop wl
 	pop temp
 	out SREG,temp
+	pop wh
+	pop wl
 	pop temp2
 	pop temp
 	reti
@@ -677,7 +677,6 @@ find:
 		mov temp2,wl
 		andi temp2,0xF ; gets rid of the higher 4 bits
 		sts RandNum,temp2
-		do_lcd_command 0b00000001 ; clear display
 		mov temp2,wl
 		shiftright temp2,4
 		mov wl,temp2
@@ -685,7 +684,6 @@ find:
 		mov temp2,wh
 		andi temp2,0xF
 		sts RandNum+2,temp2
-		printwtf temp2
 
 		;rcall differentnumber -something buggy about this as well
 
@@ -701,7 +699,6 @@ next:
 		brne loops
 	
 	sts keyRandNum,temp
-	printwtf temp
 	ldi temp,1<<TOIE5
 	sts TIMSK5,temp ; starts the timer counter now
 	input:
@@ -854,9 +851,54 @@ pot:
 	pop temp
 	ret
 
+	;timer4 mask
+	;rcall buzzeron
+	;ldists fours,0
 enter:
 	ldi at, inenter
-	ret
+	do_lcd_command 0b00000001 ; clear display
+	do_lcd_datai 'E'
+	do_lcd_datai 'n'
+	do_lcd_datai 't'
+	do_lcd_datai 'e'
+	do_lcd_datai 'r'
+	do_lcd_datai ' '
+	do_lcd_datai 'C'
+	do_lcd_datai 'o'
+	do_lcd_datai 'd'
+	do_lcd_datai 'e'
+	;do_lcd_command 0b11000000
+	push yl
+	push yh
+	push temp
+	push temp2
+	push state
+	enter_again:
+		do_lcd_command 0b11000000 + 15
+		do_lcd_command 0b11000000
+		ldi state,3
+		ldi yl,low(RandNum+2)
+		ldi yh,high(RandNum+2)
+			press_number:
+			cpi state,0
+			breq finish_entering
+			rcall keyboard
+			lds temp,keyButton
+			ld temp2,-y
+			;printwtf temp
+			;printwtf temp2
+			cp temp,temp2
+			brne enter_again
+			do_lcd_datai '*'
+			dec state
+			rjmp press_number
+	finish_entering:
+	pop state
+	pop temp2
+	pop temp
+	pop yh
+	pop yl
+	ret 
 
 ;FUNCTIONS
 
@@ -1105,7 +1147,6 @@ keyboard:
 		ldists keyFlag,1
 		pop temp
 		convert_number ; stores it into temp3
-		printwtf temp3
 		nobounce:
 			lds temp4,PINL;0b10001000
 			and temp4, temp2; still loops it until it is high again
@@ -1133,71 +1174,9 @@ pop temp2
 pop temp
 ret
 
-printwtf1:
-		push wl
-		push wh
-		clr wh
-		do_lcd_command 0b00010100 ; increment to the right
-		rcall displayw
-		pop wh
-		pop wl
-		ret
 
 
-	/*
-convert:
-	rcall sleep_5ms
-	rcall sleep_5ms
-	lds temp4,PINL
-	and temp4, temp2;
-	cpi temp4, 0;
-	brne main
-	nobounce:
-		;out PORTC,cmask
-		lds temp4,PINL
-		and temp4, temp2;
-		cpi temp4, 0;
-		breq nobounce
-	rcall sleep_5ms
-	rcall sleep_5ms
 
-	cpi wh, 3;
-	breq symbol;
-	cpi row, 3
-	breq zasdf;
-	e:
-	mov temp,row;
-	add temp,row;
-	add temp,row;
-	add temp,col;
-	inc temp;
-	back:
-	rjmp number
-
-zasdf:
-	cpi col,2;
-	breq mainerino;
-	cpi col,0;
-	breq asterisk;
-	clr temp
-	rjmp back
-
-asterisk:
-	clr acc;
-	clr temp3
-	rcall display
-	rjmp main
-
-symbol:
-	cpi row,0;
-	breq addition
-	cpi row,1;
-	breq subtraction
-	cpi row,2;
-	breq multiplication
-	cpi row,3;
-	breq division
-	*/
 ;LCD CODE
 .equ LCD_RS = 7
 .equ LCD_E = 6
