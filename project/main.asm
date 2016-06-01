@@ -542,6 +542,9 @@ timer3:
 	push temp
 	in temp,SREG
 	push temp
+	push temp2
+	push temp3
+	push temp4
 	push wl
 	push wh
 		cpi at,notstarted
@@ -550,54 +553,96 @@ timer3:
 		breq turn_backlight
 			cpi at,lost
 			breq turn_backlight
-			rjmp always_on ; make it a macro later
+			;rjmp always_on ; make it a macro later
+			rjmp finish_light
 
 	
 turn_backlight: 
+
 ;	rcall keyboard ;change that so that it would work with any random key?
 ;	ldscpi keyFlag1,0 ;sees if a key is pressed
-	breq finish_light ;not pressed, finished
-	rjmp check_light
-	
-		turn_on:
-		clr temp
-		ldists backlighton,1
-		ldists on_off,1
-			slowly_turnon:
-			lds temp,OCR3AL
-			inc temp
-			sts OCR3AL,temp
-			cpi temp,255
-			breq clear_light
-		rjmp finish_light
-					
-		turn_off:
-		ldists keyFlag1,0
-		ldists backlighton,0
-		ldists on_off,0
-		ldi temp,255
-			slowly_turnoff:
-			lds temp,OCR3AL
-			dec temp
-			sts OCR3AL,temp
-			cpi temp,0
-			breq clear_light
-		rjmp finish_light
-	
-		check_light:
+/*
+	start1:
+		ldi temp,0b11101111 ;temp=cmask
+		clr wh			; number of columns
+	col_loop1:
+		cpi wh,4
+		breq finish_light
+		;breq start
+		sts PORTL,temp ;port L 0b11101111
+		ldi temp3,0xFF ; random number
+	delay1: 
+		dec temp3
+		brne delay1
+		lds temp4,PINL;	0b0000111
+		mov temp3, temp4
+		andi temp3,0xF;0b00001111
+		cpi temp3,0xF
+		brne button_pressed
+		lsl temp
+		inc temp
+		inc wh ; increment number of columns
+		jmp col_loop1
+		*/
+/*
+	start:
+		ldi temp,0b11101111 ;temp=cmask
+		clr wh			; number of columns
+	col_loop:
+		cpi wh,4
+		breq finish1
+		;breq start
+		sts PORTL,temp ;port L 0b11101111
+		ldi temp3,0xFF ; random number
+	delay: 
+		dec temp3
+		brne delay
+		lds temp4,PINL;	0b0000111
+		mov temp3, temp4
+		andi temp3,0xF;0b00001111
+		cpi temp3,0xF
+		breq next_col
+		ldi wl, 0 ; number of rows
+		ldi temp2,1
+		*/
+	;rjmp button_pressed; it has been pressed
+
+	button_pressed:
+	;clr temp
+	;sts fiveSwait,temp ;clears the timer
+	;sts fiveSwait+1,temp
+	;sts OCR3AL,temp
+	turn_on:
+	;clr temp
+	;lds temp,OCR3AL
+	;ldists backlighton,1
+	;ldists on_off,1
+		slowly_turnon:
+		lds temp,OCR3AL
+		inc temp
+		sts OCR3AL,temp
+		;cpi temp,255
+		;breq count_fiveS ; at its brightest and needs to stay there
+		;rjmp finish_light
+		/*
+	check_light:
+		lds temp,OCR3AL
+		cpi temp,255
+		breq count_fiveS ; at its full brightness; now count for 4.5s
 		ldscpi on_off,1 ; it is already turning on
 		breq slowly_turnon
 		ldscpi on_off,0 ; it is already turning off
 		breq slowly_turnoff
-		ldscpi backlighton,1 ; checks if the backlight is on, if on, wait for 5 seconds
-		brne turn_on ; if backlight is not on, turn it on
+		rjmp finish_light
+
+	count_fiveS:
 		lds wl,fiveSwait
 		lds wh,fiveSwait+1
 		adiw wh:wl,1
 		cpi wl,low(2304) ; 4.5 seconds- actually 5.5 seconds including on + off
 		ldi temp,high(2304)
 		cpc wh,temp
-		breq turn_off
+		breq turn_off ; if 5 seconds have passed
 		sts fiveSwait,wl
 		sts fiveSwait+1,wh
 		rjmp finish_light
@@ -608,18 +653,28 @@ turn_backlight:
 		sts OCR3AL,temp
 		ldists on_off,255
 		rjmp finish_light
-
-		clear_light:
-		clr temp
-		sts fiveSwait,temp ;clears the timer
-		sts fiveSwait+1,temp
+	
+		turn_off:
 		ldists backlighton,0
-		ldists on_off,255
-		
-
+		ldists on_off,0
+			slowly_turnoff:
+			lds temp,OCR3AL
+			dec temp
+			sts OCR3AL,temp
+			cpi temp,0
+			brne finish_light
+			clr temp
+			sts fiveSwait,temp
+			sts fiveSwait+1,temp
+			ldists backlighton,0
+			ldists on_off,255
+			*/
 	finish_light:
 	pop wh
 	pop wl
+	push temp4
+	push temp3
+	pop temp2
 	pop temp
 	out SREG,temp
 	pop temp
