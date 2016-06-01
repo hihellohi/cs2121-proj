@@ -157,9 +157,7 @@ keyFound:   .byte 1;
 keyRandNum:	.byte 1
 TempCounter:.byte 1
 adcreading:	.byte 2
-fiveSwait:	.byte 2
-backlighton:.byte 1
-on_off:  	.byte 1
+backlightc: .byte 1
 
 .cseg
 
@@ -202,7 +200,7 @@ RESET:
 	ldists keyButton,245
 	ldists TempCounter,0
 	ldists adcreading,0
-	ldists backlighton,0
+	ldists backlightc,0
 	ldi state, 3;
 	clr at;
 	clr wl;
@@ -282,8 +280,7 @@ RESET:
 	;the lcd backlight
 	ldi temp,1<<3
 	out DDRE, temp
-	;ldi temp, 0xFF; sets it to 0b1111
-	clr temp
+	ldi temp, 0x0F; sets it to 0b1111
 	sts OCR3AL, temp
 	clr temp
 	sts OCR3AH, temp
@@ -361,7 +358,6 @@ RESET:
 	end:
 	
 	rcall enter;
-	rcall backlight_off
 	rjmp win;	
 
 ;INTERRUPTS
@@ -542,6 +538,7 @@ timer3:
 	push temp
 	in temp,SREG
 	push temp
+<<<<<<< HEAD
 	push temp2
 	push temp3
 	push temp4
@@ -675,6 +672,12 @@ turn_backlight:
 	push temp4
 	push temp3
 	pop temp2
+=======
+	lds temp,backlightc
+	inc temp
+	sts OCR3AL,temp
+	sts backlightc,temp
+>>>>>>> parent of dee5d02... code still broken
 	pop temp
 	out SREG,temp
 	pop temp
@@ -1098,7 +1101,6 @@ enter:
 			dec state
 			rjmp press_number
 	finish_entering:
-	ldists keyFlag1,0
 	pop state
 	pop temp2
 	pop temp
@@ -1409,7 +1411,6 @@ pop temp
 ret
 
 print_positionfound:
-	do_lcd_command 0b00000001
 	do_lcd_datai 'P'
 	do_lcd_datai 'o'
 	do_lcd_datai 's'
@@ -1443,39 +1444,8 @@ print_positionfound:
 	do_lcd_datai 'r'
 ret
 
-backlight_off:
-	push temp
-	clr temp
-	sts OCR3AL,temp
-	pop temp
-	ret
 
-/*
-backlight:
-	push temp
-	push wl
-	push wh
-	repeat_light:
-	cpi at,notstarted
-	breq turn_backlight
-		cpi at,won
-		breq turn_backlight
-			cpi at,lost
-			breq turn_backlight
-			rjmp finish_backlight ; make it a macro later
 
-	
-	turn_backlight: 
-	rcall keyboard
-	ldscpi keyFlag1,0
-	breq repeat_light
-
-	finish_backlight:
-	pop wh
-	pop wl
-	pop temp
-	ret 
-	*/
 ;LCD CODE
 .equ LCD_RS = 7
 .equ LCD_E = 6
