@@ -50,17 +50,17 @@
 
 \section{System Flow Control} \label{sec:sfc}
 \begin{center}
-\begin{tikzpicture}[node distance=2cm]
+\begin{tikzpicture}[node distance=1cm]
 
-	\node (start) [startstop] {Start};
+	\node (start) [startstop] {START};
 	\node (init) [process, below of=start] {init()};
 	\node (stcd) [process, below of=init] {startCountdown()};
-	\node (seti) [process, below of=stcd] {i := 3};
+	\node (seti) [process, below of=stcd] {$i := 3$};
 	\node (pot) [process, below of=seti] {findPot()};
 	\node (find) [process, below of=pot] {findCode()};
-	\node (dec) [process, below of=find] {i-{}-};
-	\node (loop) [decision, below of=dec] {3 != 0};
-	\node (end) [startstop, below of=loop] {End};
+	\node (dec) [process, below of=find] {$i--$};
+	\node (loop) [decision, below of=dec] {$3 \neq 0$};
+	\node (end) [startstop, below of=loop] {END};
 
 	\draw [arrow] (start) -- (init);
 	\draw [arrow] (init) -- (stcd);
@@ -69,8 +69,8 @@
 	\draw [arrow] (pot) -- (find);
 	\draw [arrow] (find) -- (dec);
 	\draw [arrow] (dec) -- (loop);
-	\draw [arrow] (loop) -- node[anchor=east] {no} (end);
-	\draw [arrow] (loop) -- node[anchor=south] {yes} +(3, 0) |- (pot);
+	\draw [arrow] (loop) -- node[anchor=east] {false} (end);
+	\draw [arrow] (loop) -- node[anchor=south] {true} +(3, 0) |- (pot);
 
 \end{tikzpicture}
 \end{center}
