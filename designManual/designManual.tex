@@ -1,6 +1,5 @@
 \documentclass[a4paper]{article}
 
-\RequirePackage[12tabu, orthodox]{nag}
 \usepackage[english]{babel}
 \usepackage[UKenglish]{isodate}
 \usepackage[parfill]{parskip}
@@ -44,8 +43,11 @@
 
 \begin{document}
 
+\newgeometry{margin=1.5in}
 \maketitle
 \tableofcontents
+\pagebreak
+\restoregeometry
 
 \section{System Flow Control} \label{sec:sfc}
 \begin{center}
@@ -92,8 +94,8 @@ ocount        & unsigned integer & 1     & Stores the number of seconds per pote
 \multicolumn{4}{l}{Potentiometer Variables} \\ \midrule
 wadc          & flag             & 1     & Stores whether or not the system is waiting on an ADC reading \\
 count         & unsigned integer & 1     & Stores the number of seconds left in the last pot round \\
-adcreading	 & unsigned integer & 2     & Stores the most recent ADC reading \\  
-potwin	& unsigned integer	& 2		& Counter to count 1 second to win the potentiometer round \\ 
+adcreading	& unsigned integer	& 2 & Stores the most recent ADC reading \\  
+potwin		& unsigned integer	& 2	& Counter to count 1 second to win the potentiometer round \\ 
 temp4:temp3	& unsigned integer	& 2	& Target potentiometer value for the current round \\
 
 \bottomrule
@@ -101,9 +103,12 @@ temp4:temp3	& unsigned integer	& 2	& Target potentiometer value for the current 
 \end{table}
 
 \section{Algorithm Descriptions}
-At the highest level of abstraction, the algorithm of the program is very simple; it simply calls the relevant functions 
-sequentially (as shown in Section \ref{sec:sfc}).
-The order in which the functions are called determines the screens the user must progress through in the game.
+
+\begin{lstlisting}[language=C]
+printf("hello world");
+\end{lstlisting}
+
+\section{Module Specification}
 
 
 \end{document}
