@@ -88,14 +88,11 @@ shifting:
 	lds temp,@0
 	lds temp2,@1
 	cp temp,temp2
-	breq changeNum
-		changeNum:
-			lsr temp2
-			inc temp2
-			cp temp,temp2
-			breq changeNum
-			sts @1,temp2
-			rjmp loopy
+.endmacro
+
+.macro changeNum
+		sts @0,temp2
+		rjmp loopy
 .endmacro
 
 .macro printwtf
@@ -151,6 +148,7 @@ potwin:	.byte 1;
 seed:		.byte 2;
 RandNum:	.byte 3;
 keyFlag:    .byte 1;
+keyFlag1:	.byte 1
 keyButton:  .byte 1;
 keyFound:   .byte 1;
 keyRandNum:	.byte 1
@@ -187,9 +185,10 @@ RESET:
 	ldists second, 0;
 	ldists wadc, 0;
 	ldists keyFlag,0
+	ldists keyFlag,1
 	ldists keyFound,0
 	ldists keyRandNum,255
-	ldists keyButton,255
+	ldists keyButton,245
 	ldists TempCounter,0
 	ldists adcreading,0
 	ldi roundsleft, 3;
@@ -331,7 +330,7 @@ RESET:
 			sbrs temp, 2
 				ldi temp2, 10
 			sbrs temp, 3
-				ldi temp3, 5
+				ldi temp2, 5
 		nobutton:
 		cpi at, incountdown
 		brne notYetStarted
@@ -342,7 +341,7 @@ RESET:
 	
 	;START GAME HERE
 	rcall startingcountdown;
-
+	
 	mainloop:
 		cpi roundsleft, 0;
 		breq end;
@@ -352,6 +351,7 @@ RESET:
 		dec roundsleft;
 		rjmp mainloop
 	end:
+	
 	rcall enter;
 	rjmp win;	
 
@@ -716,20 +716,20 @@ find:
 		loadmem seed ; loads the random generator number
 		mov temp2,wl
 		andi temp2,0xF ; gets rid of the higher 4 bits
+		do_lcd_command 0b00000001
+		//printwtf temp2
 		sts RandNum,temp2
-		do_lcd_command 0b00000001 ; clear display
 		mov temp2,wl
 		shiftright temp2,4
 		mov wl,temp2
+		//printwtf temp2
 		sts RandNum+1,temp2
 		mov temp2,wh
 		andi temp2,0xF
 		sts RandNum+2,temp2
-		printwtf temp2
+		;printwtf temp2
 
-		;rcall differentnumber -something buggy about this as well
-
-	
+		rcall differentnumber; -something buggy about this as well
 next:
 	mov temp2,roundsleft
 	ldi yl,low(RandNum)
@@ -741,7 +741,7 @@ next:
 		brne loops
 	
 	sts keyRandNum,temp
-	printwtf temp
+	rcall print_positionfound
 	ldi temp,1<<TOIE5
 	sts TIMSK5,temp ; starts the timer counter now
 	input:
@@ -776,6 +776,7 @@ pot:
 	push temp4
 	ldi at, inpot
 
+	do_lcd_command 0b00000001
 	do_lcd_command 0b11000000
 	do_lcd_datai 'R'
 	do_lcd_datai 'e'
@@ -884,9 +885,65 @@ pot:
 	pop temp
 	ret
 
+	;timer4 mask
+	;rcall buzzeron
+	;ldists fours,0
 enter:
 	ldi at, inenter
-	ret
+	push yl
+	push yh
+	push temp
+	push temp2
+	push roundsleft
+	do_lcd_command 0b00000001 ; clear display
+	do_lcd_datai 'E'
+	do_lcd_datai 'n'
+	do_lcd_datai 't'
+	do_lcd_datai 'e'
+	do_lcd_datai 'r'
+	do_lcd_datai ' '
+	do_lcd_datai 'C'
+	do_lcd_datai 'o'
+	do_lcd_datai 'd'
+	do_lcd_datai 'e'
+	ldists keyFlag1,0
+	rjmp start_enter
+	enter_again:
+		do_lcd_command 0b11000000
+		do_lcd_datai ' '
+		do_lcd_datai ' '
+		do_lcd_datai ' '
+	start_enter:
+		do_lcd_command 0b11000000
+		ldi roundsleft,3
+		ldi yl,low(RandNum+2)
+		ldi yh,high(RandNum+2)
+		ld temp2,y
+		press_number:
+		cpi roundsleft,0
+		breq finish_entering
+			repeat_key:
+			rcall keyboard
+			ldscpi keyFlag1,0 ; button not pressed
+			breq repeat_key
+		ldists keyFlag1,0
+		cpi roundsleft,3
+		breq compare_y
+			ld temp2,-y
+		compare_y:
+			lds temp,keyButton
+			cp temp,temp2
+			brne enter_again
+			do_lcd_datai '*'
+			dec roundsleft
+			rjmp press_number
+	finish_entering:
+	pop roundsleft
+	pop temp2
+	pop temp
+	pop yh
+	pop yl
+	ret 
 
 ;FUNCTIONS
 
@@ -1079,6 +1136,7 @@ keyboard:
 	col_loop:
 		cpi wh,4
 		breq finish1
+		;breq start
 		sts PORTL,temp ;port L 0b11101111
 		ldi temp3,0xFF ; random number
 	delay: 
@@ -1134,9 +1192,9 @@ keyboard:
 		brne finish_2 ; may see where if it's just a random low
 		push temp ; using it part of the macro, dont want to ruin it
 		ldists keyFlag,1
+		ldists keyFlag1,1
 		pop temp
 		convert_number ; stores it into temp3
-		printwtf temp3
 		nobounce:
 			lds temp4,PINL;0b10001000
 			and temp4, temp2; still loops it until it is high again
@@ -1158,77 +1216,74 @@ push temp
 push temp2
 loopy:
 	compNum RandNum,RandNum+1
-	compNum RandNum,RandNum+2
-	compNum RandNum+1,RandNum+2
+	brne next_compare
+	inc temp2
+	cpi temp2,16
+	brne store
+	ldi temp2,0
+		store:
+		changeNum RandNum+1
+
+		next_compare:
+		compNum RandNum,RandNum+2
+		brne next_compare1
+		inc temp2
+		cpi temp2,16
+		brne store_1
+		ldi temp2,0
+			store_1:
+			changeNum RandNum+2
+
+			next_compare1:
+			compNum RandNum+1,RandNum+2
+			brne done_compare
+			inc temp2
+			cpi temp2,16
+			brne store_2
+			ldi temp2,0
+				store_2:
+				changeNum RandNum+2
+done_compare:
 pop temp2
 pop temp
 ret
 
-printwtf1:
-		push wl
-		push wh
-		clr wh
-		do_lcd_command 0b00010100 ; increment to the right
-		rcall displayw
-		pop wh
-		pop wl
-		ret
+print_positionfound:
+	do_lcd_datai 'P'
+	do_lcd_datai 'o'
+	do_lcd_datai 's'
+	do_lcd_datai 'i'
+	do_lcd_datai 't'
+	do_lcd_datai 'i'
+	do_lcd_datai 'o'
+	do_lcd_datai 'n'
+	do_lcd_datai ' '
+	do_lcd_datai 'f'
+	do_lcd_datai 'o'
+	do_lcd_datai 'u'
+	do_lcd_datai 'n'
+	do_lcd_datai 'd'
+	do_lcd_datai '!'
+	do_lcd_command 0b11000000
+	do_lcd_datai 'S'
+	do_lcd_datai 'c'
+	do_lcd_datai 'a'
+	do_lcd_datai 'n'
+	do_lcd_datai ' '
+	do_lcd_datai 'f'
+	do_lcd_datai 'o'
+	do_lcd_datai 'r'
+	do_lcd_datai ' '
+	do_lcd_datai 'n'
+	do_lcd_datai 'u'
+	do_lcd_datai 'm'
+	do_lcd_datai 'b'
+	do_lcd_datai 'e'
+	do_lcd_datai 'r'
+ret
 
 
-	/*
-convert:
-	rcall sleep_5ms
-	rcall sleep_5ms
-	lds temp4,PINL
-	and temp4, temp2;
-	cpi temp4, 0;
-	brne main
-	nobounce:
-		;out PORTC,cmask
-		lds temp4,PINL
-		and temp4, temp2;
-		cpi temp4, 0;
-		breq nobounce
-	rcall sleep_5ms
-	rcall sleep_5ms
 
-	cpi wh, 3;
-	breq symbol;
-	cpi row, 3
-	breq zasdf;
-	e:
-	mov temp,row;
-	add temp,row;
-	add temp,row;
-	add temp,col;
-	inc temp;
-	back:
-	rjmp number
-
-zasdf:
-	cpi col,2;
-	breq mainerino;
-	cpi col,0;
-	breq asterisk;
-	clr temp
-	rjmp back
-
-asterisk:
-	clr acc;
-	clr temp3
-	rcall display
-	rjmp main
-
-symbol:
-	cpi row,0;
-	breq addition
-	cpi row,1;
-	breq subtraction
-	cpi row,2;
-	breq multiplication
-	cpi row,3;
-	breq division
-	*/
 ;LCD CODE
 .equ LCD_RS = 7
 .equ LCD_E = 6
