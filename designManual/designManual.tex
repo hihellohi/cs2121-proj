@@ -6,18 +6,17 @@
 \usepackage[parfill]{parskip}
 \usepackage{float}
 \usepackage{graphicx}
-%\usepackage{booktabs}
+\usepackage{booktabs}
 \usepackage{csquotes}
 \usepackage{listings}
 \usepackage[margin=2.5cm]{geometry}
 \usepackage{color}
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, arrows}
-%\usepackage[hidelinks]{hyperref}
 
-\tikzstyle{startstop} = [rectangle, rounded corners, minimum width=3cm, minimum height=1cm,text centered, draw=black]
-\tikzstyle{process} = [rectangle, minimum width=3cm, minimum height=1cm, text centered, draw=black]
-\tikzstyle{decision} = [diamond, minimum width=3cm, minimum height=1cm, text centered, draw=black]
+\tikzstyle{startstop} = [rectangle, rounded corners, minimum width=4cm, minimum height=1cm,text centered, draw=black]
+\tikzstyle{process} = [rectangle, minimum width=4cm, minimum height=1cm, text centered, draw=black]
+\tikzstyle{decision} = [diamond, minimum width=4cm, minimum height=1cm, text centered, draw=black]
 \tikzstyle{arrow} = [thick,->,>=stealth]
 \tikzstyle{line} = [thick, -]
 
@@ -50,7 +49,7 @@
 
 \section{System Flow Control} \label{sec:sfc}
 \begin{center}
-\begin{tikzpicture}[node distance=1cm]
+\begin{tikzpicture}[node distance=2.5cm]
 
 	\node (start) [startstop] {START};
 	\node (init) [process, below of=start] {init()};
@@ -70,14 +69,40 @@
 	\draw [arrow] (find) -- (dec);
 	\draw [arrow] (dec) -- (loop);
 	\draw [arrow] (loop) -- node[anchor=east] {false} (end);
-	\draw [arrow] (loop) -- node[anchor=south] {true} +(3, 0) |- (pot);
+	\draw [arrow] (loop) -- node[anchor=south] {true} +(4, 0) |- (pot);
 
 \end{tikzpicture}
 \end{center}
 
+\section{Data Structures}
+\begin{table}[H]
+\centering
+\caption{Data Structures Dictionary}
+\label{tbl:dict}
+\begin{tabular}{@{}lllp{9cm}@{}}
+\toprule
+Variable Name & Data Type        & Bytes & Description \\ \midrule
+\multicolumn{4}{l}{Global Variables} \\ \midrule
+fours         & unsigned integer & 1     & Count used by Timer 4 to calculate a second (each count represents 1/30th of a second) \\
+bounce        & unsigned integer & 1     & Counter used for debouncing PB1 \\
+seed          & unsigned integer & 2     & Seed used for random number generation \\
+roundsleft    & unsigned integer & 1     & How many rounds are left in the game \\
+at            & enumeration      & 1     & Which round the player is in \\
+ocount        & unsigned integer & 1     & Stores the number of seconds per potentiometer round \\ \midrule
+\multicolumn{4}{l}{Potentiometer Variables} \\ \midrule
+wadc          & flag             & 1     & Stores whether or not the system is waiting on an ADC reading \\
+count         & unsigned integer & 1     & Stores the number of seconds left in the last pot round \\
+adcreading	 & unsigned integer & 2     & Stores the most recent ADC reading \\  
+potwin	& unsigned integer	& 2		& Counter to count 1 second to win the potentiometer round \\ 
+temp4:temp3	& unsigned integer	& 2	& Target potentiometer value for the current round \\
+
+\bottomrule
+\end{tabular}
+\end{table}
+
 \section{Algorithm Descriptions}
 At the highest level of abstraction, the algorithm of the program is very simple; it simply calls the relevant functions 
-sequentially (as discussed in \ref{sec:sfc}).
+sequentially (as shown in Section \ref{sec:sfc}).
 The order in which the functions are called determines the screens the user must progress through in the game.
 
 
