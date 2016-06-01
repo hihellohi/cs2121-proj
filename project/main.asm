@@ -895,6 +895,12 @@ enter:
 	push temp
 	push temp2
 	push roundsleft
+	
+	ldi temp, 1<<TOIE4
+	sts TIMSK4, temp
+	rcall buzzeron
+	ldists second, 0
+	
 	do_lcd_command 0b00000001 ; clear display
 	do_lcd_datai 'E'
 	do_lcd_datai 'n'
