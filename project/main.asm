@@ -157,7 +157,9 @@ keyFound:   .byte 1;
 keyRandNum:	.byte 1
 TempCounter:.byte 1
 adcreading:	.byte 2
-backlightc: .byte 1
+fiveSwait:	.byte 2
+backlighton:.byte 1
+on_off:  	.byte 1
 
 .cseg
 
@@ -200,7 +202,7 @@ RESET:
 	ldists keyButton,245
 	ldists TempCounter,0
 	ldists adcreading,0
-	ldists backlightc,0
+	ldists backlighton,0
 	ldi state, 3;
 	clr at;
 	clr wl;
@@ -280,7 +282,8 @@ RESET:
 	;the lcd backlight
 	ldi temp,1<<3
 	out DDRE, temp
-	ldi temp, 0x0F; sets it to 0b1111
+	;ldi temp, 0xFF; sets it to 0b1111
+	clr temp
 	sts OCR3AL, temp
 	clr temp
 	sts OCR3AH, temp
@@ -358,6 +361,7 @@ RESET:
 	end:
 	
 	rcall enter;
+	rcall backlight_off
 	rjmp win;	
 
 ;INTERRUPTS
@@ -538,10 +542,84 @@ timer3:
 	push temp
 	in temp,SREG
 	push temp
-	lds temp,backlightc
-	inc temp
-	sts OCR3AL,temp
-	sts backlightc,temp
+	push wl
+	push wh
+		cpi at,notstarted
+		breq turn_backlight
+		cpi at,won
+		breq turn_backlight
+			cpi at,lost
+			breq turn_backlight
+			rjmp always_on ; make it a macro later
+
+	
+turn_backlight: 
+;	rcall keyboard ;change that so that it would work with any random key?
+;	ldscpi keyFlag1,0 ;sees if a key is pressed
+	breq finish_light ;not pressed, finished
+	rjmp check_light
+	
+		turn_on:
+		clr temp
+		ldists backlighton,1
+		ldists on_off,1
+			slowly_turnon:
+			lds temp,OCR3AL
+			inc temp
+			sts OCR3AL,temp
+			cpi temp,255
+			breq clear_light
+		rjmp finish_light
+					
+		turn_off:
+		ldists keyFlag1,0
+		ldists backlighton,0
+		ldists on_off,0
+		ldi temp,255
+			slowly_turnoff:
+			lds temp,OCR3AL
+			dec temp
+			sts OCR3AL,temp
+			cpi temp,0
+			breq clear_light
+		rjmp finish_light
+	
+		check_light:
+		ldscpi on_off,1 ; it is already turning on
+		breq slowly_turnon
+		ldscpi on_off,0 ; it is already turning off
+		breq slowly_turnoff
+		ldscpi backlighton,1 ; checks if the backlight is on, if on, wait for 5 seconds
+		brne turn_on ; if backlight is not on, turn it on
+		lds wl,fiveSwait
+		lds wh,fiveSwait+1
+		adiw wh:wl,1
+		cpi wl,low(2304) ; 4.5 seconds- actually 5.5 seconds including on + off
+		ldi temp,high(2304)
+		cpc wh,temp
+		breq turn_off
+		sts fiveSwait,wl
+		sts fiveSwait+1,wh
+		rjmp finish_light
+
+		always_on:
+		ldists backlighton,1
+		ser temp
+		sts OCR3AL,temp
+		ldists on_off,255
+		rjmp finish_light
+
+		clear_light:
+		clr temp
+		sts fiveSwait,temp ;clears the timer
+		sts fiveSwait+1,temp
+		ldists backlighton,0
+		ldists on_off,255
+		
+
+	finish_light:
+	pop wh
+	pop wl
 	pop temp
 	out SREG,temp
 	pop temp
@@ -965,6 +1043,7 @@ enter:
 			dec state
 			rjmp press_number
 	finish_entering:
+	ldists keyFlag1,0
 	pop state
 	pop temp2
 	pop temp
@@ -1275,6 +1354,7 @@ pop temp
 ret
 
 print_positionfound:
+	do_lcd_command 0b00000001
 	do_lcd_datai 'P'
 	do_lcd_datai 'o'
 	do_lcd_datai 's'
@@ -1308,8 +1388,39 @@ print_positionfound:
 	do_lcd_datai 'r'
 ret
 
+backlight_off:
+	push temp
+	clr temp
+	sts OCR3AL,temp
+	pop temp
+	ret
 
+/*
+backlight:
+	push temp
+	push wl
+	push wh
+	repeat_light:
+	cpi at,notstarted
+	breq turn_backlight
+		cpi at,won
+		breq turn_backlight
+			cpi at,lost
+			breq turn_backlight
+			rjmp finish_backlight ; make it a macro later
 
+	
+	turn_backlight: 
+	rcall keyboard
+	ldscpi keyFlag1,0
+	breq repeat_light
+
+	finish_backlight:
+	pop wh
+	pop wl
+	pop temp
+	ret 
+	*/
 ;LCD CODE
 .equ LCD_RS = 7
 .equ LCD_E = 6
