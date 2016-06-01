@@ -157,6 +157,7 @@ keyFound:   .byte 1;
 keyRandNum:	.byte 1
 TempCounter:.byte 1
 adcreading:	.byte 2
+backlightc: .byte 1
 
 .cseg
 
@@ -172,6 +173,8 @@ adcreading:	.byte 2
 	jmp timer0
 .org 0x3A
 	jmp adcread
+.org OVF3addr
+	jmp timer3
 .org OVF4addr
 	jmp timer4
 .org OVF5addr
@@ -197,6 +200,7 @@ RESET:
 	ldists keyButton,245
 	ldists TempCounter,0
 	ldists adcreading,0
+	ldists backlightc,0
 	ldi state, 3;
 	clr at;
 	clr wl;
@@ -261,17 +265,33 @@ RESET:
 	ldi temp,0xF0
 	sts DDRL,temp ;0b11110000
 	;motor
-	ldi temp,1<<4
+	;ldi temp,1<<4
+	clr temp
 	out DDRE,temp
 	
 	;keyboard hold- one second
 	clr temp
 	sts TCCR5A,temp
-	ldi temp,1<<CS50 ;find a good prescalar
+	ldi temp,1<<CS50
 	sts TCCR5B,temp
 	clr temp
-	;ldi temp,1<<TOIE5
 	sts TIMSK5,temp ; starts the timer counter now
+
+	;the lcd backlight
+	ldi temp,1<<3
+	out DDRE, temp
+	ldi temp, 0x0F; sets it to 0b1111
+	sts OCR3AL, temp
+	clr temp
+	sts OCR3AH, temp
+	ldi temp, (1 << TOIE3) ; timer overflow interrupt is enabled
+	; timer overflow is set each time it is at the bottom
+	sts TIMSK3, temp
+	ldi temp, (3 << CS30); prescalar of 64  
+	sts TCCR3B, temp
+	ldi temp, (1 << WGM30)|(1<<COM3A1); clear OC0B on compare match when up counting, set OC3B on compare match when down counting
+	;phase correct
+	sts TCCR3A, temp
 
 	;lcd
 	ser temp
@@ -331,7 +351,7 @@ RESET:
 		cpi state, 0;
 		breq end;
 			
-		;rcall pot;
+		rcall pot;
 		rcall find;
 		dec state;
 		rjmp mainloop
@@ -513,6 +533,20 @@ timer4:
 	out SREG, temp
 	pop temp
 	reti
+
+timer3:
+	push temp
+	in temp,SREG
+	push temp
+	lds temp,backlightc
+	inc temp
+	sts OCR3AL,temp
+	sts backlightc,temp
+	pop temp
+	out SREG,temp
+	pop temp
+	reti
+	
 
 timer1:
 	sei
@@ -705,18 +739,14 @@ find:
 		loadmem seed ; loads the random generator number
 		mov temp2,wl
 		andi temp2,0xF ; gets rid of the higher 4 bits
-		do_lcd_command 0b00000001
-		printwtf temp2
 		sts RandNum,temp2
 		mov temp2,wl
 		shiftright temp2,4
-		mov wl,temp2
-		printwtf temp2
+		;mov wl,temp2
 		sts RandNum+1,temp2
 		mov temp2,wh
 		andi temp2,0xF
 		sts RandNum+2,temp2
-		;printwtf temp2
 
 		rcall differentnumber; -something buggy about this as well
 next:
