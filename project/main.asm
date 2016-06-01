@@ -954,8 +954,8 @@ resetpottoz:
 	out PORTC, temp
 	cbi PORTG, 1
 	cbi PORTG, 0
+	sts TIMSK4, temp
 
-	cli
 	do_lcd_command 0b00000010 
 	do_lcd_datai 'R'
 	do_lcd_datai 'e'
@@ -971,7 +971,9 @@ resetpottoz:
 	do_lcd_datai 'o'
 	do_lcd_datai ' '
 	do_lcd_datai '0'
-	sei
+	
+	ldi temp, 1 << TOIE4
+	sts TIMSK4, temp
 
 	resetpottozloop:
 		loadmem adcreading
@@ -980,7 +982,8 @@ resetpottoz:
 		cpi wh, 0;
 		brne resetpottozloop
 
-	cli
+	clr temp
+	sts TIMSK4, temp
 	do_lcd_command 0b00000010 
 	do_lcd_datai 'F'
 	do_lcd_datai 'i'
@@ -996,7 +999,8 @@ resetpottoz:
 	do_lcd_datai 's'
 	do_lcd_datai ' '
 	do_lcd_datai ' '
-	sei
+	ldi temp, 1 << TOIE4
+	sts TIMSK4, temp
 
 	pop temp
 	ret
