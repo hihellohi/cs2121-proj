@@ -88,14 +88,11 @@ shifting:
 	lds temp,@0
 	lds temp2,@1
 	cp temp,temp2
-	breq changeNum
-		changeNum:
-			lsr temp2
-			inc temp2
-			cp temp,temp2
-			breq changeNum
-			sts @1,temp2
-			rjmp loopy
+.endmacro
+
+.macro changeNum
+		sts @0,temp2
+		rjmp loopy
 .endmacro
 
 .macro printwtf
@@ -125,7 +122,7 @@ shifting:
 .def temp4 = r21
 .def wl = r24
 .def wh = r25
-.def state = r18
+.def roundsleft = r18
 .def at = r19
 .def temp3 = r20
 
@@ -145,21 +142,24 @@ shifting:
 count:	.byte 1;
 ocount:	.byte 1;
 bounce: .byte 1;
-fours:	.byte 1;
+second:	.byte 1;
 wadc:	.byte 1;
-vadc:	.byte 2;
 potwin:	.byte 1;
-bounce0:	.byte 1;
-bounce1:	.byte 1;
 seed:		.byte 2;
 RandNum:	.byte 3;
 keyFlag:    .byte 1;
+keyFlag1:	.byte 1
 keyButton:  .byte 1;
 keyFound:   .byte 1;
 keyRandNum:	.byte 1
 TempCounter:.byte 1
 adcreading:	.byte 2
-
+no_debounce:.byte 1
+fiveSwait:  .byte 2
+backlighton:.byte 1
+on_off:		.byte 1
+pressed_b:  .byte 1
+win_lose:	.byte 1
 .cseg
 
 ;VECTOR TABLE
@@ -174,6 +174,8 @@ adcreading:	.byte 2
 	jmp timer0
 .org 0x3A
 	jmp adcread
+.org OVF3addr
+	jmp timer3
 .org OVF4addr
 	jmp timer4
 .org OVF5addr
@@ -187,18 +189,20 @@ RESET:
 	ldists ocount, 10;
 	ldists count, 0;
 	ldists bounce, 0;
-	ldists fours, 0;
+	ldists second, 0;
 	ldists wadc, 0;
-	ldists vadc, 0;
-	ldists bounce0, 0
-	ldists bounce1, 0
 	ldists keyFlag,0
+	ldists keyFlag,1
 	ldists keyFound,0
 	ldists keyRandNum,255
-	ldists keyButton,255
+	ldists keyButton,245
 	ldists TempCounter,0
 	ldists adcreading,0
-	ldi state, 3;
+	ldists on_off,255
+	ldists backlighton,255
+	ldists pressed_b,0
+
+	ldi roundsleft, 3;
 	clr at;
 	clr wl;
 	clr wh;
@@ -262,17 +266,31 @@ RESET:
 	ldi temp,0xF0
 	sts DDRL,temp ;0b11110000
 	;motor
-	ldi temp,1<<4
+	;ldi temp,1<<4
+	clr temp
 	out DDRE,temp
 	
 	;keyboard hold- one second
 	clr temp
 	sts TCCR5A,temp
-	ldi temp,1<<CS50 ;find a good prescalar
+	ldi temp,1<<CS50
 	sts TCCR5B,temp
 	clr temp
-	;ldi temp,1<<TOIE5
 	sts TIMSK5,temp ; starts the timer counter now
+
+	;the lcd backlight
+	ldi temp,1<<3
+	out DDRE, temp
+	clr temp
+	sts OCR3AL, temp
+	clr temp
+	sts OCR3AH, temp
+	ldi temp, (1 << TOIE3)
+	sts TIMSK3, temp
+	ldi temp, (3 << CS30)
+	sts TCCR3B, temp
+	ldi temp, (1 << WGM30)|(1<<COM3A1)
+	sts TCCR3A, temp
 
 	;lcd
 	ser temp
@@ -321,23 +339,44 @@ RESET:
 
 	sei;
 
+	ldi temp, 0x7F
+	sts PORTL, temp
+	lds temp2, ocount
 	notYetStarted:
+
+		lds temp, PINL
+		andi temp, 0xF
+		cpi temp, 0xF
+		breq nobutton
+			sbrs temp, 0
+				ldi temp2, 20
+			sbrs temp, 1
+				ldi temp2, 15
+			sbrs temp, 2
+				ldi temp2, 10
+			sbrs temp, 3
+				ldi temp2, 5
+		nobutton:
 		cpi at, incountdown
 		brne notYetStarted
+
+	sts ocount, temp2
+	clr temp
+	sts PORTL, temp
 	
 	;START GAME HERE
 	rcall startingcountdown;
-	/*
+	
 	mainloop:
-		cpi state, 0;
+		cpi roundsleft, 0;
 		breq end;
 			
 		rcall pot;
 		rcall find;
-		dec state;
+		dec roundsleft;
 		rjmp mainloop
 	end:
-	*/
+	
 	rcall enter;
 	rjmp win;	
 
@@ -450,9 +489,9 @@ timer4:
 			inc temp;
 			sts potwin, temp;
 		timer4notwin:
-		ldscpi fours, t;
+		ldscpi second, t;
 		brne full
-			ldists fours, 0
+			ldists second, 0
 			ldsdec count
 			breq losejump
 			do_lcd_command 0b11000000 + 11
@@ -485,14 +524,14 @@ timer4:
 	notinpot_t4:
 		cpi at, won
 		breq winningt4
-			ldscpi fours, t >> 1;
+			ldscpi second, t >> 1;
 			brne endnotinpot_t4
 				clr temp;
 				sts TIMSK4, temp
 				rcall buzzeroff
 				rjmp endnotinpot_t4
 		winningt4:
-			lds temp, fours
+			lds temp, second
 			andi temp, 15
 
 			cpi temp, 0
@@ -506,7 +545,7 @@ timer4:
 				cbi PORTA, 1
 			turnofft4:
 	endnotinpot_t4:
-	ldsinc fours
+	ldsinc second
 
 	pop temp3
 	pop temp2
@@ -514,6 +553,107 @@ timer4:
 	out SREG, temp
 	pop temp
 	reti
+
+timer3:
+	push temp
+	in temp,SREG
+	push temp
+	push wl
+	push wh
+		
+	cpi at,notstarted
+	breq turn_backlight
+		cpi at,won
+		brsh turn_backlight
+		rjmp always_on ; if not at any of these stages, FINISH
+
+
+	turn_backlight: 
+	ldscpi win_lose,0 ; used when the key is pressed at win/lose stage
+	brne turn_on
+	ldists no_debounce,1 ; set it to no debounce
+	rcall keyboard ; check keyboard
+	ldscpi pressed_b,1 ; check if button is pressed
+	breq turn_on; if button pressed, turn on light
+	ldscpi backlighton,1 ; at full brightness
+	brne pwm_on_off
+	rjmp count_fiveS ; at its full brightness; now count for 4.5s
+		pwm_on_off:
+		ldscpi on_off,1 ; it is already turning on
+		breq slowly_turnon
+		ldscpi on_off,0 ; it is already turning off
+		breq slowly_turnoff
+		rjmp finish_light
+
+	turn_on:
+	clr wl
+	clr wh
+	storemem fiveSwait ; clear the 5s counter
+	ldists win_lose,0 ;set back to zero
+	cpi at,won
+		brsh button_reset
+	ldscpi backlighton,1 ; already full brightness, dont need to turn it on
+		breq always_on
+	ldists pressed_b,0 ;button no longer pressed
+	ldists on_off,1 ; set it to ON for pwm
+	clr temp
+	sts OCR3AL,temp
+		slowly_turnon:
+		lds temp,OCR3AL
+		inc temp
+		sts OCR3AL,temp	
+		cpi temp,255 ; check if full brightness
+		brne finish_light
+			ldists backlighton,1 ; at full brightness
+	        rjmp finish_light
+	
+	button_reset:
+	ldists win_lose,1
+	jmp RESET
+
+	turn_off:
+	ldists backlighton,0
+	ldists on_off,0
+	clr wh
+	clr wl
+	storemem fiveSwait
+		slowly_turnoff:
+		lds temp,OCR3AL
+		dec temp
+		sts OCR3AL,temp
+		cpi temp,0
+		brne finish_light
+		ldists on_off,255
+		rjmp finish_light
+
+	count_fiveS:
+	loadmem fiveSwait
+	adiw wh:wl,1
+	cpi wl,low(2304) ; 4.5 seconds- 0.5 sec to turn it on
+	ldi temp,high(2304)
+	cpc wh,temp
+	breq turn_off ; if 5 seconds have passed
+	storemem fiveSwait
+	rjmp finish_light
+
+	always_on:
+	ldists no_debounce,0
+	ldists pressed_b,0
+	ldists on_off,0
+	ser temp
+	sts OCR3AL,temp
+	ldists backlighton,1
+	rjmp finish_light
+
+	finish_light:
+	pop wh
+	pop wl
+	pop temp
+	out SREG,temp
+	pop temp
+	reti
+	
+	
 
 timer1:
 	sei
@@ -697,7 +837,7 @@ find:
 	push temp3
 	push yh
 	push yl
-	cpi state,3 ; if not the first time going through, dont need to find the numbers
+	cpi roundsleft,3 ; if not the first time going through, dont need to find the numbers
 	brne next
 		loadmem seed ; loads the random generator number
 		mov temp2,wl
@@ -705,17 +845,14 @@ find:
 		sts RandNum,temp2
 		mov temp2,wl
 		shiftright temp2,4
-		mov wl,temp2
 		sts RandNum+1,temp2
 		mov temp2,wh
 		andi temp2,0xF
 		sts RandNum+2,temp2
 
-		;rcall differentnumber -something buggy about this as well
-
-	
+		rcall differentnumber; -something buggy about this as well
 next:
-	mov temp2,state
+	mov temp2,roundsleft
 	ldi yl,low(RandNum)
 	ldi yh,high(RandNum)
 	loops:
@@ -725,16 +862,15 @@ next:
 		brne loops
 	
 	sts keyRandNum,temp
+	rcall print_positionfound
 	ldi temp,1<<TOIE5
 	sts TIMSK5,temp ; starts the timer counter now
 	input:
 		rcall keyboard
 		ldscpi keyFound,0 ; checks if the button is found
 		breq input
-	ser temp
-	out PORTC,temp
-	clr temp ;may not be the best place to put it but i shall SEE
 	
+	clr temp 
 	sts TIMSK5,temp ; turns the timer off
 	ldists keyFound,0; resets the button back
 	ldists keyRandNum,255
@@ -759,6 +895,7 @@ pot:
 	push temp4
 	ldi at, inpot
 
+	do_lcd_command 0b00000001
 	do_lcd_command 0b11000000
 	do_lcd_datai 'R'
 	do_lcd_datai 'e'
@@ -774,15 +911,6 @@ pot:
 	
 	;choose number
 	loadmem seed
-/*	mov temp, wh
-	lsr temp
-	lsr temp
-	mov temp2, state
-	lsl temp2
-	inc temp2
-	mul temp, state
-	add r0, wl
-	add r1, wh*/
 	andi wh, 3
 	mov temp4, wh
 	mov temp3, wl
@@ -793,7 +921,7 @@ pot:
 	rcall displayt
 	rcall buzzeron
 	clr temp
-	sts fours, temp
+	sts second, temp
 	ldi temp, 1 << TOIE4
 	sts TIMSK4, temp
 
@@ -862,7 +990,7 @@ pot:
 	cbi PORTG, 1
 
 	rcall buzzeron
-	ldists fours, 0
+	ldists second, 0
 
 	ldi at, infind
 		
@@ -881,6 +1009,17 @@ pot:
 	;ldists fours,0
 enter:
 	ldi at, inenter
+	push yl
+	push yh
+	push temp
+	push temp2
+	push roundsleft
+	
+	ldi temp, 1<<TOIE4
+	sts TIMSK4, temp
+	rcall buzzeron
+	ldists second, 0
+	
 	do_lcd_command 0b00000001 ; clear display
 	do_lcd_datai 'E'
 	do_lcd_datai 'n'
@@ -892,33 +1031,39 @@ enter:
 	do_lcd_datai 'o'
 	do_lcd_datai 'd'
 	do_lcd_datai 'e'
-	;do_lcd_command 0b11000000
-	push yl
-	push yh
-	push temp
-	push temp2
-	push state
+	ldists keyFlag1,0
+	rjmp start_enter
 	enter_again:
-		do_lcd_command 0b11000000 + 15
 		do_lcd_command 0b11000000
-		ldi state,3
+		do_lcd_datai ' '
+		do_lcd_datai ' '
+		do_lcd_datai ' '
+	start_enter:
+		do_lcd_command 0b11000000
+		ldi roundsleft,3
 		ldi yl,low(RandNum+2)
 		ldi yh,high(RandNum+2)
-			press_number:
-			cpi state,0
-			breq finish_entering
+		ld temp2,y
+		press_number:
+		cpi roundsleft,0
+		breq finish_entering
+			repeat_key:
 			rcall keyboard
-			lds temp,keyButton
+			ldscpi keyFlag1,0 ; button not pressed
+			breq repeat_key
+		ldists keyFlag1,0
+		cpi roundsleft,3
+		breq compare_y
 			ld temp2,-y
-			;printwtf temp
-			;printwtf temp2
+		compare_y:
+			lds temp,keyButton
 			cp temp,temp2
 			brne enter_again
 			do_lcd_datai '*'
-			dec state
+			dec roundsleft
 			rjmp press_number
 	finish_entering:
-	pop state
+	pop roundsleft
 	pop temp2
 	pop temp
 	pop yh
@@ -934,8 +1079,8 @@ resetpottoz:
 	out PORTC, temp
 	cbi PORTG, 1
 	cbi PORTG, 0
+	sts TIMSK4, temp
 
-	cli
 	do_lcd_command 0b00000010 
 	do_lcd_datai 'R'
 	do_lcd_datai 'e'
@@ -951,15 +1096,19 @@ resetpottoz:
 	do_lcd_datai 'o'
 	do_lcd_datai ' '
 	do_lcd_datai '0'
-	sei
+	
+	ldi temp, 1 << TOIE4
+	sts TIMSK4, temp
 
 	resetpottozloop:
+		loadmem adcreading
 		cpi wl, 0;
 		brne resetpottozloop
 		cpi wh, 0;
 		brne resetpottozloop
 
-	cli
+	clr temp
+	sts TIMSK4, temp
 	do_lcd_command 0b00000010 
 	do_lcd_datai 'F'
 	do_lcd_datai 'i'
@@ -975,7 +1124,8 @@ resetpottoz:
 	do_lcd_datai 's'
 	do_lcd_datai ' '
 	do_lcd_datai ' '
-	sei
+	ldi temp, 1 << TOIE4
+	sts TIMSK4, temp
 
 	pop temp
 	ret
@@ -1115,6 +1265,7 @@ keyboard:
 	col_loop:
 		cpi wh,4
 		breq finish1
+		;breq start
 		sts PORTL,temp ;port L 0b11101111
 		ldi temp3,0xFF ; random number
 	delay: 
@@ -1134,6 +1285,9 @@ keyboard:
 				cpi temp3, 0 ; number is found
 				mov temp3, temp4
 				brne not_found
+					ldists pressed_b,1
+					ldscpi no_debounce,1
+					breq finish1
 					rcall debounce
 					rjmp finish1
 				not_found:
@@ -1170,6 +1324,7 @@ keyboard:
 		brne finish_2 ; may see where if it's just a random low
 		push temp ; using it part of the macro, dont want to ruin it
 		ldists keyFlag,1
+		ldists keyFlag1,1
 		pop temp
 		convert_number ; stores it into temp3
 		nobounce:
@@ -1193,12 +1348,83 @@ push temp
 push temp2
 loopy:
 	compNum RandNum,RandNum+1
-	compNum RandNum,RandNum+2
-	compNum RandNum+1,RandNum+2
+	brne next_compare
+	inc temp2
+	cpi temp2,16
+	brne store
+	ldi temp2,0
+		store:
+		changeNum RandNum+1
+
+		next_compare:
+		compNum RandNum,RandNum+2
+		brne next_compare1
+		inc temp2
+		cpi temp2,16
+		brne store_1
+		ldi temp2,0
+			store_1:
+			changeNum RandNum+2
+
+			next_compare1:
+			compNum RandNum+1,RandNum+2
+			brne done_compare
+			inc temp2
+			cpi temp2,16
+			brne store_2
+			ldi temp2,0
+				store_2:
+				changeNum RandNum+2
+done_compare:
 pop temp2
 pop temp
 ret
 
+print_positionfound:
+	do_lcd_datai 'P'
+	do_lcd_datai 'o'
+	do_lcd_datai 's'
+	do_lcd_datai 'i'
+	do_lcd_datai 't'
+	do_lcd_datai 'i'
+	do_lcd_datai 'o'
+	do_lcd_datai 'n'
+	do_lcd_datai ' '
+	do_lcd_datai 'f'
+	do_lcd_datai 'o'
+	do_lcd_datai 'u'
+	do_lcd_datai 'n'
+	do_lcd_datai 'd'
+	do_lcd_datai '!'
+	do_lcd_command 0b11000000
+	do_lcd_datai 'S'
+	do_lcd_datai 'c'
+	do_lcd_datai 'a'
+	do_lcd_datai 'n'
+	do_lcd_datai ' '
+	do_lcd_datai 'f'
+	do_lcd_datai 'o'
+	do_lcd_datai 'r'
+	do_lcd_datai ' '
+	do_lcd_datai 'n'
+	do_lcd_datai 'u'
+	do_lcd_datai 'm'
+	do_lcd_datai 'b'
+	do_lcd_datai 'e'
+	do_lcd_datai 'r'
+ret
+
+backlight:
+	push temp
+	push temp2
+	ldists no_debounce,1
+	loopies:
+		rcall keyboard
+		ldscpi keyFlag1,1
+		brne loopies
+	pop temp2
+	pop temp
+	ret
 
 
 
