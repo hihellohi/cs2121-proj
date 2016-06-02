@@ -325,7 +325,8 @@ RESET:
 	sts PORTL, temp
 
 	notYetStarted:
-
+		
+		;change difficulty
 		lds temp, PINL
 		andi temp, 0xF
 		cpi temp, 0xF
@@ -339,6 +340,7 @@ RESET:
 			sbrs temp, 3
 				ldi temp2, 5
 		nobutton:
+
 		cpi at, incountdown
 		brne notYetStarted
 
@@ -467,17 +469,17 @@ timer4:
 	brne notinpot_t4
 		ldscpi potwin, 0;
 		breq timer4notwin
-			inc temp;
+			inc temp; increment pot win timer
 			sts potwin, temp;
 		timer4notwin:
 		ldscpi second, t;
 		brne full
 			ldists second, 0
-			ldsdec count
+			ldsdec count ;decrement and display time left
 			breq losejump
 			do_lcd_command 0b11000000 + 11
 			rcall displayt
-			do_lcd_datai ' '
+			do_lcd_datai ' ' ;in case we need to overwrite existing display
 			rcall buzzeron
 			rjmp endnotinpot_t4
 		full:
@@ -486,16 +488,16 @@ timer4:
 			cp temp2, temp3
 
 			breq quarter
-				cpi temp, (t >> 2);
+				cpi temp, (t >> 2); at 250ms for the general case...
 				rjmp half;
 			quarter:
-				cpi temp, (t >> 1);
+				cpi temp, (t >> 1); at 500ms for the first beep...
 			half:
 			brne checkadc
-				rcall buzzeroff
+				rcall buzzeroff; stop the buzzer
 				rjmp endnotinpot_t4
 			checkadc:
-				andi temp, 3 ;POT FREQUENCY
+				andi temp, 0b11 ;read the pot every 8th of a second
 				cpi temp, 0;
 				brne endnotinpot_t4
 				ldscpi wadc, 1
@@ -505,15 +507,15 @@ timer4:
 	notinpot_t4:
 		cpi at, won
 		breq winningt4
-			ldscpi second, t >> 1;
+			ldscpi second, t >> 1; stop the buzzer at 500ms if not in find pot mode
 			brne endnotinpot_t4
 				clr temp;
 				sts TIMSK4, temp
 				rcall buzzeroff
 				rjmp endnotinpot_t4
-		winningt4:
+		winningt4: ;if won, flash strobe
 			lds temp, second
-			andi temp, 15
+			andi temp, 0b1111 ;not the state of strobe every quarter of a second
 
 			cpi temp, 0
 			brne turnont4
@@ -642,7 +644,7 @@ timer3:
 	
 	
 
-timer1:
+timer1: ;dedicated buzzer timer
 	sei
 	push temp
 	in temp, SREG
@@ -662,7 +664,6 @@ timer1:
 	reti
 
 timer0:
-	;rngesus
 	push temp
 	in temp, SREG
 	push temp
@@ -723,7 +724,7 @@ timer0:
 win:
 	ldi at, won
 	rcall buzzeron
-	ldi temp, 1 << TOIE4
+	ldi temp, 1 << TOIE4 ;enable strobe
 	sts TIMSK4, temp
 	do_lcd_command 0b00000001
 	do_lcd_datai 'G'
@@ -802,7 +803,7 @@ startingcountdown:
 	do_lcd_datai '.'
 	do_lcd_datai '.'
 	do_lcd_datai '.'
-	countdownLoop:
+	countdownLoop: ;count down from 3
 		dec temp
 		do_lcd_command 0b11000000 + 12
 		do_lcd_data temp
@@ -957,7 +958,7 @@ pot:
 
 			ldscpi potwin, 0
 			brne potwinalreadystarted
-				inc temp;
+				inc temp ;enable the countdown to victory
 				sts potwin, temp
 			potwinalreadystarted:
 
@@ -966,7 +967,7 @@ pot:
 			rjmp endpot10light
 		pot10lightoff:
 			cbi PORTG, 1
-			ldists potwin, 0
+			ldists potwin, 0 ;disable countdown to victory
 		endpot10light:
 
 	rjmp potloop;
@@ -992,9 +993,6 @@ pot:
 	pop temp
 	ret
 
-	;timer4 mask
-	;rcall buzzeron
-	;ldists fours,0
 enter:
 	ldi at, inenter
 	push yl
@@ -1093,7 +1091,7 @@ resetpottoz:
 		cpi wl, 0;
 		brne resetpottozloop
 		cpi wh, 0;
-		brne resetpottozloop
+		brne resetpottozloop ;loop until w is 0
 
 	clr temp
 	sts TIMSK4, temp
@@ -1145,7 +1143,7 @@ buzzeroff:
 	pop temp
 	ret
 
-displayt:
+displayt:;displays the value in temp2 in decimal form
 	push temp
 	push temp2
 	push temp3
