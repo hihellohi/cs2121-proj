@@ -162,6 +162,7 @@ fiveSwait:  .byte 2
 backlighton:.byte 1
 on_off:		.byte 1
 pressed_b:  .byte 1
+win_lose:	.byte 1
 .cseg
 
 ;VECTOR TABLE
@@ -204,7 +205,7 @@ RESET:
 	ldists TempCounter,0
 	ldists adcreading,0
 	ldists on_off,255
-	ldists backlight,255
+	ldists backlighton,255
 	ldists pressed_b,0
 	ldi state, 3;
 	clr at;
@@ -552,10 +553,12 @@ timer3:
 
 
 	turn_backlight: 
+	ldscpi win_lose,0 ; used when the key is pressed at win/lose stage
+	brne turn_on
 	ldists no_debounce,1 ; set it to no debounce
 	rcall keyboard ; check keyboard
 	ldscpi pressed_b,1 ; check if button is pressed
-	breq turn_on
+	breq turn_on; if button pressed, turn on light
 	ldscpi backlighton,1 ; at full brightness
 	brne pwm_on_off
 	rjmp count_fiveS ; at its full brightness; now count for 4.5s
@@ -570,6 +573,7 @@ timer3:
 	clr wl
 	clr wh
 	storemem fiveSwait ; clear the 5s counter
+	ldists win_lose,0 ;set back to zero
 	cpi at,won
 		brsh button_reset
 	ldscpi backlighton,1 ; already full brightness, dont need to turn it on
@@ -588,6 +592,7 @@ timer3:
 	        rjmp finish_light
 	
 	button_reset:
+	ldists win_lose,1
 	jmp RESET
 
 	turn_off:
