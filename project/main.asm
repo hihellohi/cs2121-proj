@@ -157,8 +157,11 @@ keyFound:   .byte 1;
 keyRandNum:	.byte 1
 TempCounter:.byte 1
 adcreading:	.byte 2
-backlightc: .byte 1
-
+no_debounce:.byte 1
+fiveSwait:  .byte 2
+backlighton:.byte 1
+on_off:		.byte 1
+pressed_b:  .byte 1
 .cseg
 
 ;VECTOR TABLE
@@ -200,7 +203,6 @@ RESET:
 	ldists keyButton,245
 	ldists TempCounter,0
 	ldists adcreading,0
-	ldists backlightc,0
 	ldi state, 3;
 	clr at;
 	clr wl;
@@ -280,17 +282,15 @@ RESET:
 	;the lcd backlight
 	ldi temp,1<<3
 	out DDRE, temp
-	ldi temp, 0x0F; sets it to 0b1111
+	clr temp
 	sts OCR3AL, temp
 	clr temp
 	sts OCR3AH, temp
-	ldi temp, (1 << TOIE3) ; timer overflow interrupt is enabled
-	; timer overflow is set each time it is at the bottom
+	ldi temp, (1 << TOIE3)
 	sts TIMSK3, temp
-	ldi temp, (3 << CS30); prescalar of 64  
+	ldi temp, (3 << CS30)
 	sts TCCR3B, temp
-	ldi temp, (1 << WGM30)|(1<<COM3A1); clear OC0B on compare match when up counting, set OC3B on compare match when down counting
-	;phase correct
+	ldi temp, (1 << WGM30)|(1<<COM3A1)
 	sts TCCR3A, temp
 
 	;lcd
@@ -538,99 +538,77 @@ timer3:
 	push temp
 	in temp,SREG
 	push temp
-<<<<<<< HEAD
 	push temp2
 	push temp3
 	push temp4
 	push wl
 	push wh
-		cpi at,notstarted
-		breq turn_backlight
+		
+	cpi at,notstarted
+	breq turn_backlight
 		cpi at,won
 		breq turn_backlight
 			cpi at,lost
 			breq turn_backlight
-			;rjmp always_on ; make it a macro later
-			rjmp finish_light
+			; make it a macro later
+			rjmp always_on
 
 	
-turn_backlight: 
-
-;	rcall keyboard ;change that so that it would work with any random key?
-;	ldscpi keyFlag1,0 ;sees if a key is pressed
-/*
-	start1:
-		ldi temp,0b11101111 ;temp=cmask
-		clr wh			; number of columns
-	col_loop1:
-		cpi wh,4
-		breq finish_light
-		;breq start
-		sts PORTL,temp ;port L 0b11101111
-		ldi temp3,0xFF ; random number
-	delay1: 
-		dec temp3
-		brne delay1
-		lds temp4,PINL;	0b0000111
-		mov temp3, temp4
-		andi temp3,0xF;0b00001111
-		cpi temp3,0xF
-		brne button_pressed
-		lsl temp
-		inc temp
-		inc wh ; increment number of columns
-		jmp col_loop1
-		*/
-/*
-	start:
-		ldi temp,0b11101111 ;temp=cmask
-		clr wh			; number of columns
-	col_loop:
-		cpi wh,4
-		breq finish1
-		;breq start
-		sts PORTL,temp ;port L 0b11101111
-		ldi temp3,0xFF ; random number
-	delay: 
-		dec temp3
-		brne delay
-		lds temp4,PINL;	0b0000111
-		mov temp3, temp4
-		andi temp3,0xF;0b00001111
-		cpi temp3,0xF
-		breq next_col
-		ldi wl, 0 ; number of rows
-		ldi temp2,1
-		*/
-	;rjmp button_pressed; it has been pressed
+	turn_backlight: 
+	ldists no_debounce,1 ; set it to no debounce
+	rcall keyboard ; check keyboard
+	ldscpi pressed_b,0 ; buttonis not pressed
+	breq check_light ;checks if it is
+	
 
 	button_pressed:
-	;clr temp
-	;sts fiveSwait,temp ;clears the timer
-	;sts fiveSwait+1,temp
-	;sts OCR3AL,temp
+	clr temp
+	sts fiveSwait,temp ;clears the timer
+	sts fiveSwait+1,temp
+	cpi at,lost
+	breq button_reset
+	cpi at,won
+	breq button_reset
+	rjmp turn_on
+		button_reset:
+		jmp RESET
+
 	turn_on:
+	ldists pressed_b,0
 	;clr temp
-	;lds temp,OCR3AL
-	;ldists backlighton,1
-	;ldists on_off,1
+	;sts OCR3AL,temp
+	ldists backlighton,0
+	ldists on_off,1
 		slowly_turnon:
 		lds temp,OCR3AL
 		inc temp
 		sts OCR3AL,temp
-		;cpi temp,255
-		;breq count_fiveS ; at its brightest and needs to stay there
-		;rjmp finish_light
-		/*
-	check_light:
-		lds temp,OCR3AL
 		cpi temp,255
+		brne finish_light
+			ldists backlighton,1 ; at full brightness
+			ser temp
+			out PORTC,temp
+	        rjmp finish_light
+		
+	check_light:
+		ldscpi backlighton,1
 		breq count_fiveS ; at its full brightness; now count for 4.5s
 		ldscpi on_off,1 ; it is already turning on
 		breq slowly_turnon
 		ldscpi on_off,0 ; it is already turning off
 		breq slowly_turnoff
 		rjmp finish_light
+
+	finish_light:
+	pop wh
+	pop wl
+	pop temp4
+	pop temp3
+	pop temp2
+	pop temp
+	out SREG,temp
+	pop temp
+	reti
 
 	count_fiveS:
 		lds wl,fiveSwait
@@ -645,43 +623,30 @@ turn_backlight:
 		rjmp finish_light
 
 		always_on:
-		ldists backlighton,1
+		;ldists backlighton,1
+		ldists no_debounce,0
+		ldists pressed_b,0
 		ser temp
 		sts OCR3AL,temp
-		ldists on_off,255
+		ldists on_off,0
 		rjmp finish_light
 	
 		turn_off:
 		ldists backlighton,0
 		ldists on_off,0
+		clr temp
+		sts fiveSwait,temp
+		sts fiveSwait+1,temp
 			slowly_turnoff:
 			lds temp,OCR3AL
 			dec temp
 			sts OCR3AL,temp
 			cpi temp,0
 			brne finish_light
-			clr temp
-			sts fiveSwait,temp
-			sts fiveSwait+1,temp
 			ldists backlighton,0
 			ldists on_off,255
-			*/
-	finish_light:
-	pop wh
-	pop wl
-	push temp4
-	push temp3
-	pop temp2
-=======
-	lds temp,backlightc
-	inc temp
-	sts OCR3AL,temp
-	sts backlightc,temp
->>>>>>> parent of dee5d02... code still broken
-	pop temp
-	out SREG,temp
-	pop temp
-	reti
+			rjmp finish_light
+	
 	
 
 timer1:
@@ -1318,6 +1283,9 @@ keyboard:
 				cpi temp3, 0 ; number is found
 				mov temp3, temp4
 				brne not_found
+					ldists pressed_b,1
+					ldscpi no_debounce,1
+					breq finish1
 					rcall debounce
 					rjmp finish1
 				not_found:
@@ -1443,6 +1411,18 @@ print_positionfound:
 	do_lcd_datai 'e'
 	do_lcd_datai 'r'
 ret
+
+backlight:
+	push temp
+	push temp2
+	ldists no_debounce,1
+	loopies:
+		rcall keyboard
+		ldscpi keyFlag1,1
+		brne loopies
+	pop temp2
+	pop temp
+	ret
 
 
 
