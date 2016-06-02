@@ -11,10 +11,12 @@
 \usepackage[margin=2.5cm]{geometry}
 \usepackage{color}
 \usepackage{tikz}
+\usepackage{siunitx}
 \usetikzlibrary{shapes.geometric, arrows}
 
 \renewcommand{\lstlistingname}{Algorithm}% Listing -> Algorithm
 \renewcommand{\lstlistlistingname}{List of \lstlistingname s}
+\newcommand{\nth}{\textsuperscript}
 
 \tikzstyle{startstop} = [rectangle, rounded corners, minimum width=4cm, minimum height=1cm,text centered, draw=black]
 \tikzstyle{process} = [rectangle, minimum width=4cm, minimum height=1cm, text centered, draw=black]
@@ -80,11 +82,11 @@
 \end{tikzpicture}
 \end{center}
 
-\section{Data Structures}
+\section{Data Structures Dictionary}
 
 \begin{table}[H]
 \centering
-\caption{Data Structures Dictionary}
+%\caption{Data Structures Dictionary}
 \label{tbl:dict}
 \begin{tabular}{@{}lllp{9cm}@{}}
 \toprule
@@ -111,7 +113,8 @@ temp4:temp3	& unsigned integer	& 2	& Target potentiometer value for the current 
 
 The main algorithms used in the program are as follows (shown in C code).
 
-\begin{lstlisting}[language=C, caption={Algorithm for \texttt{startCountdown()}}]
+\subsection{Algorithm for \texttt{startCountdown}}
+\begin{lstlisting}[language=C]
 
 int cdTimer;
 
@@ -132,7 +135,8 @@ void startCountdown() {
 
 \end{lstlisting}
 
-\begin{lstlisting}[language=C, caption={Algorithm for \texttt{findPot()}}]
+\subsection{Algorithm for \texttt{findPot}}
+\begin{lstlisting}[language=C]
 
 #define IN_POT 2
 
@@ -217,9 +221,52 @@ void findPot() {
 
 \end{lstlisting}
 
-\section{Module Specification}
+\section{Module Specifications}
 
-\subsection{Initialisation}
-This module of the code is jumped to from the RESET vector. It resets all of the general purpose and I/O registers 
+\subsection{Initialisation (\texttt{Init})}
+
+\subsubsection{Function}
+This module is jumped to from the RESET vector and as of a result, is always the first function that
+is run when the board is powered on or reset from the game complete screen or a PB0 button press. It resets all 
+of the general purpose and I/O registers to their starting values. This is especially important when a reset 
+from a game complete screen or PB0 button press occurs as in those cases, not all of the memory will be reset to 
+zero for free.
+
+\subsubsection{Input and Output}
+This module takes in the keypad buttons; A, B, C and D, as input. These buttons change the difficulty of the
+program by changing the variable ocount which is later used in the program to determine the time allowed for 
+the player to find the potentiometer position. The module prints out the lines, "\texttt{2121 16s1 Safe Cracker}", to the screen as output.
+
+\subsection{Find Potentiometer Position (\texttt{findPot})}
+This module is called 3 times throughout the duration of the game as shown in section \ref{sec:sfc}. It uses the
+Analog to Digital converter to determine the position of the pot and it changes the state of the LED bar as
+output to display the proximity of the current position to the target one. The module also uses a timer to count
+down from a value determined in the Initialisation module and displays it to the LCD screen. Lastly, the module
+uses the buzzer module to create a beep for a quarter of a second whenever the timer counts down.
+
+\subsection{Analog to Digital Converter}
+The ADC module uses the the function \verb|startAdcRead| and the interrupt function \verb|adcread| as its 
+interface. The former initiates an AdcRead and is called by a timer periodically (at a frequency of 
+\SI{8}{\hertz}) during the "Find POT position" part of the game. The latter actually reads the value from the 
+board's ADC and stores it in the variable \verb|adcreading| as output to be used by the \verb|findPot| module.
+
+\subsection{LCD display}
+This module takes in either immediate values or values in a register and communicates to the LCD display to
+display them as their ASCII symbols. It is also capable of taking in a register and displaying it as its
+hindu-arabic numeral representation by first converting the value from binary to decimal and then displaying
+the appropriate digits one by one.
+
+\subsection{Buzzer}
+The buzzer module uses a dedicated timer to control the output waveform to the pin connected to
+the buzzer. The buzzer could then be turned on and off respectively by either setting or clearing the interrupt
+mask for that timer. This was abstracted by using two functions \verb|buzzeron| and \verb|buzzeroff| which were
+called by the rest of the program to control the buzzer.
+
+\subsection{Keyboard}
+The keyboard module takes in input from the keypad and debounces the keypad by waiting until the key has been
+lifted. It reads the input from the keypad by repeatedly polling the relevant pins and returns any output 
+in the temp register. This module is used in the \verb|findKey| and \verb|enterKey| modules to determine which 
+key is being entered by the player.
+
 
 \end{document}
