@@ -154,7 +154,12 @@ keyFound:   .byte 1;
 keyRandNum:	.byte 1
 TempCounter:.byte 1
 adcreading:	.byte 2
-
+no_debounce:.byte 1
+fiveSwait:  .byte 2
+backlighton:.byte 1
+on_off:		.byte 1
+pressed_b:  .byte 1
+win_lose:	.byte 1
 .cseg
 
 ;VECTOR TABLE
@@ -169,6 +174,8 @@ adcreading:	.byte 2
 	jmp timer0
 .org 0x3A
 	jmp adcread
+.org OVF3addr
+	jmp timer3
 .org OVF4addr
 	jmp timer4
 .org OVF5addr
@@ -191,6 +198,10 @@ RESET:
 	ldists keyButton,245
 	ldists TempCounter,0
 	ldists adcreading,0
+	ldists on_off,255
+	ldists backlighton,255
+	ldists pressed_b,0
+
 	ldi roundsleft, 3;
 	clr at;
 	clr wl;
@@ -255,17 +266,31 @@ RESET:
 	ldi temp,0xF0
 	sts DDRL,temp ;0b11110000
 	;motor
-	ldi temp,1<<4
+	;ldi temp,1<<4
+	clr temp
 	out DDRE,temp
 	
 	;keyboard hold- one second
 	clr temp
 	sts TCCR5A,temp
-	ldi temp,1<<CS50 ;find a good prescalar
+	ldi temp,1<<CS50
 	sts TCCR5B,temp
 	clr temp
-	;ldi temp,1<<TOIE5
 	sts TIMSK5,temp ; starts the timer counter now
+
+	;the lcd backlight
+	ldi temp,1<<3
+	out DDRE, temp
+	clr temp
+	sts OCR3AL, temp
+	clr temp
+	sts OCR3AH, temp
+	ldi temp, (1 << TOIE3)
+	sts TIMSK3, temp
+	ldi temp, (3 << CS30)
+	sts TCCR3B, temp
+	ldi temp, (1 << WGM30)|(1<<COM3A1)
+	sts TCCR3A, temp
 
 	;lcd
 	ser temp
@@ -529,6 +554,107 @@ timer4:
 	pop temp
 	reti
 
+timer3:
+	push temp
+	in temp,SREG
+	push temp
+	push wl
+	push wh
+		
+	cpi at,notstarted
+	breq turn_backlight
+		cpi at,won
+		brsh turn_backlight
+		rjmp always_on ; if not at any of these stages, FINISH
+
+
+	turn_backlight: 
+	ldscpi win_lose,0 ; used when the key is pressed at win/lose stage
+	brne turn_on
+	ldists no_debounce,1 ; set it to no debounce
+	rcall keyboard ; check keyboard
+	ldscpi pressed_b,1 ; check if button is pressed
+	breq turn_on; if button pressed, turn on light
+	ldscpi backlighton,1 ; at full brightness
+	brne pwm_on_off
+	rjmp count_fiveS ; at its full brightness; now count for 4.5s
+		pwm_on_off:
+		ldscpi on_off,1 ; it is already turning on
+		breq slowly_turnon
+		ldscpi on_off,0 ; it is already turning off
+		breq slowly_turnoff
+		rjmp finish_light
+
+	turn_on:
+	clr wl
+	clr wh
+	storemem fiveSwait ; clear the 5s counter
+	ldists win_lose,0 ;set back to zero
+	cpi at,won
+		brsh button_reset
+	ldscpi backlighton,1 ; already full brightness, dont need to turn it on
+		breq always_on
+	ldists pressed_b,0 ;button no longer pressed
+	ldists on_off,1 ; set it to ON for pwm
+	clr temp
+	sts OCR3AL,temp
+		slowly_turnon:
+		lds temp,OCR3AL
+		inc temp
+		sts OCR3AL,temp	
+		cpi temp,255 ; check if full brightness
+		brne finish_light
+			ldists backlighton,1 ; at full brightness
+	        rjmp finish_light
+	
+	button_reset:
+	ldists win_lose,1
+	jmp RESET
+
+	turn_off:
+	ldists backlighton,0
+	ldists on_off,0
+	clr wh
+	clr wl
+	storemem fiveSwait
+		slowly_turnoff:
+		lds temp,OCR3AL
+		dec temp
+		sts OCR3AL,temp
+		cpi temp,0
+		brne finish_light
+		ldists on_off,255
+		rjmp finish_light
+
+	count_fiveS:
+	loadmem fiveSwait
+	adiw wh:wl,1
+	cpi wl,low(2304) ; 4.5 seconds- 0.5 sec to turn it on
+	ldi temp,high(2304)
+	cpc wh,temp
+	breq turn_off ; if 5 seconds have passed
+	storemem fiveSwait
+	rjmp finish_light
+
+	always_on:
+	ldists no_debounce,0
+	ldists pressed_b,0
+	ldists on_off,0
+	ser temp
+	sts OCR3AL,temp
+	ldists backlighton,1
+	rjmp finish_light
+
+	finish_light:
+	pop wh
+	pop wl
+	pop temp
+	out SREG,temp
+	pop temp
+	reti
+	
+	
+
 timer1:
 	sei
 	push temp
@@ -716,18 +842,13 @@ find:
 		loadmem seed ; loads the random generator number
 		mov temp2,wl
 		andi temp2,0xF ; gets rid of the higher 4 bits
-		do_lcd_command 0b00000001
-		//printwtf temp2
 		sts RandNum,temp2
 		mov temp2,wl
 		shiftright temp2,4
-		mov wl,temp2
-		//printwtf temp2
 		sts RandNum+1,temp2
 		mov temp2,wh
 		andi temp2,0xF
 		sts RandNum+2,temp2
-		;printwtf temp2
 
 		rcall differentnumber; -something buggy about this as well
 next:
@@ -748,10 +869,8 @@ next:
 		rcall keyboard
 		ldscpi keyFound,0 ; checks if the button is found
 		breq input
-	ser temp
-	out PORTC,temp
-	clr temp ;may not be the best place to put it but i shall SEE
 	
+	clr temp 
 	sts TIMSK5,temp ; turns the timer off
 	ldists keyFound,0; resets the button back
 	ldists keyRandNum,255
@@ -1166,6 +1285,9 @@ keyboard:
 				cpi temp3, 0 ; number is found
 				mov temp3, temp4
 				brne not_found
+					ldists pressed_b,1
+					ldscpi no_debounce,1
+					breq finish1
 					rcall debounce
 					rjmp finish1
 				not_found:
@@ -1291,6 +1413,18 @@ print_positionfound:
 	do_lcd_datai 'e'
 	do_lcd_datai 'r'
 ret
+
+backlight:
+	push temp
+	push temp2
+	ldists no_debounce,1
+	loopies:
+		rcall keyboard
+		ldscpi keyFlag1,1
+		brne loopies
+	pop temp2
+	pop temp
+	ret
 
 
 
