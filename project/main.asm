@@ -154,7 +154,6 @@ keyFound:   .byte 1;
 keyRandNum:	.byte 1
 TempCounter:.byte 1
 adcreading:	.byte 2
-no_debounce:.byte 1
 fiveSwait:  .byte 2
 backlighton:.byte 1
 on_off:		.byte 1
@@ -641,7 +640,6 @@ timer3:
 	rjmp finish_light
 
 	always_on:
-	ldists no_debounce,0
 	ldists pressed_b,0
 	ldists on_off,0
 	ser temp
@@ -1293,9 +1291,6 @@ keyboard:
 				cpi temp3, 0 ; number is found
 				mov temp3, temp4
 				brne not_found
-					;ldists pressed_b,1
-					ldscpi no_debounce,1
-					breq finish1
 					rcall debounce
 					rjmp finish1
 				not_found:
