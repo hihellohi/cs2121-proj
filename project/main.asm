@@ -1,7 +1,7 @@
 .include "m2560def.inc"
 
 ;MACROS
-.macro swp
+.macro swp ;swap two registers
 	mov r15, @1
 	mov @1, @0
 	mov @0, r15
@@ -22,7 +22,7 @@
 	swp temp, @0
 .endmacro
 
-.macro do_lcd_datai
+.macro do_lcd_datai ;display immediate value
 	mov r15, temp
 	ldi temp, @0
 	rcall lcd_data
@@ -30,23 +30,17 @@
 	mov temp, r15
 .endmacro
 
-.macro bin_to_dec_w
-	ldi temp2, low(@0)
-	ldi temp3, high(@0)
-	rcall bin_to_dec_wf
-.endmacro
-
 .macro bin_to_dec_t
 	ldi temp2, @0
 	rcall bin_to_dec_f
 .endmacro
 
-.macro loadmem
+.macro loadmem ;load a word in memory to wh and wl
 	lds wl, @0
 	lds wh, @0 + 1;
 .endmacro 
 
-.macro storemem
+.macro storemem ;store a word in memory from wh and wl
 	sts @0, wl
 	sts @0 + 1, wh;
 .endmacro 
@@ -95,17 +89,6 @@ shifting:
 		rjmp loopy
 .endmacro
 
-.macro printwtf
-		push wl
-		push wh
-		clr wh
-		mov wl,@0
-		do_lcd_command 0b00010100 ; increment to the right
-		rcall displayw
-		pop wh
-		pop wl
-.endmacro
-
 .macro convert_number
 		mov temp4,wl; store row in temp4
 		ldi temp3,4
@@ -139,12 +122,12 @@ shifting:
 
 .dseg
 ;VARIABLES
-count:	.byte 1;
-ocount:	.byte 1;
-bounce: .byte 1;
-second:	.byte 1;
-wadc:	.byte 1;
-potwin:	.byte 1;
+count:		.byte 1;
+ocount:		.byte 1;
+bounce:		.byte 1;
+second:		.byte 1;
+wadc:		.byte 1;
+potwin:		.byte 1;
 seed:		.byte 2;
 RandNum:	.byte 3;
 keyFlag:    .byte 1;
@@ -171,7 +154,7 @@ win_lose:	.byte 1
 	jmp timer1
 .org OVF0addr
 	jmp timer0
-.org 0x3A
+.org 0x3A ;adc interrupt
 	jmp adcread
 .org OVF3addr
 	jmp timer3
@@ -338,9 +321,9 @@ RESET:
 
 	sei;
 
-	ldi temp, 0x7F
+	ldi temp, 0xF
 	sts PORTL, temp
-	lds temp2, ocount
+
 	notYetStarted:
 
 		lds temp, PINL
@@ -389,7 +372,6 @@ adcread:
 	lds wh, ADCH
 	ldists wadc, 0
 	storemem adcreading
-	;rcall displayw
 	pop temp
 	out SREG, temp
 	pop temp
@@ -1199,53 +1181,6 @@ bin_to_dec_f:
 	breq dontprintbtd;
 		do_lcd_data temp4
 	dontprintbtd:
-	pop temp4
-	ret
-
-displayw:
-	push temp
-	push temp2
-	push temp3
-	push wh
-	push wl
-
-	clr temp;
-	;do_lcd_command 0b00000001 ; clear display
-	bin_to_dec_w 10000;
-	bin_to_dec_w 1000;
-	bin_to_dec_w 100;
-	bin_to_dec_w 10;
-	bin_to_dec_w 1;
-	cpi temp, 0;
-	brne dontprintzerow
-		do_lcd_datai '0'
-	dontprintzerow:
-
-	pop wl
-	pop wh
-	pop temp3
-	pop temp2
-	pop temp
-	ret;
-
-bin_to_dec_wf:
-	push temp4
-	ldi temp4, '0'
-	bintodecwloop:
-		cp wl, temp2
-		cpc wh, temp3
-		brlo endbintodecwloop
-		
-		sub wl, temp2
-		sbc wh, temp3
-		inc temp4;
-		ser temp;
-		rjmp bintodecwloop;
-	endbintodecwloop:
-	cpi temp, 0
-	breq dontprintbtdw;
-		do_lcd_data temp4
-	dontprintbtdw:
 	pop temp4
 	ret
 
