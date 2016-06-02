@@ -122,7 +122,7 @@ shifting:
 .def temp4 = r21
 .def wl = r24
 .def wh = r25
-.def state = r18
+.def roundsleft = r18
 .def at = r19
 .def temp3 = r20
 
@@ -142,12 +142,9 @@ shifting:
 count:	.byte 1;
 ocount:	.byte 1;
 bounce: .byte 1;
-fours:	.byte 1;
+second:	.byte 1;
 wadc:	.byte 1;
-vadc:	.byte 2;
 potwin:	.byte 1;
-bounce0:	.byte 1;
-bounce1:	.byte 1;
 seed:		.byte 2;
 RandNum:	.byte 3;
 keyFlag:    .byte 1;
@@ -192,11 +189,8 @@ RESET:
 	ldists ocount, 10;
 	ldists count, 0;
 	ldists bounce, 0;
-	ldists fours, 0;
+	ldists second, 0;
 	ldists wadc, 0;
-	ldists vadc, 0;
-	ldists bounce0, 0
-	ldists bounce1, 0
 	ldists keyFlag,0
 	ldists keyFlag,1
 	ldists keyFound,0
@@ -207,7 +201,8 @@ RESET:
 	ldists on_off,255
 	ldists backlighton,255
 	ldists pressed_b,0
-	ldi state, 3;
+
+	ldi roundsleft, 3;
 	clr at;
 	clr wl;
 	clr wh;
@@ -344,20 +339,41 @@ RESET:
 
 	sei;
 
+	ldi temp, 0x7F
+	sts PORTL, temp
+	lds temp2, ocount
 	notYetStarted:
+
+		lds temp, PINL
+		andi temp, 0xF
+		cpi temp, 0xF
+		breq nobutton
+			sbrs temp, 0
+				ldi temp2, 20
+			sbrs temp, 1
+				ldi temp2, 15
+			sbrs temp, 2
+				ldi temp2, 10
+			sbrs temp, 3
+				ldi temp2, 5
+		nobutton:
 		cpi at, incountdown
 		brne notYetStarted
+
+	sts ocount, temp2
+	clr temp
+	sts PORTL, temp
 	
 	;START GAME HERE
 	rcall startingcountdown;
 	
 	mainloop:
-		cpi state, 0;
+		cpi roundsleft, 0;
 		breq end;
 			
 		rcall pot;
 		rcall find;
-		dec state;
+		dec roundsleft;
 		rjmp mainloop
 	end:
 	
@@ -473,9 +489,9 @@ timer4:
 			inc temp;
 			sts potwin, temp;
 		timer4notwin:
-		ldscpi fours, t;
+		ldscpi second, t;
 		brne full
-			ldists fours, 0
+			ldists second, 0
 			ldsdec count
 			breq losejump
 			do_lcd_command 0b11000000 + 11
@@ -508,14 +524,14 @@ timer4:
 	notinpot_t4:
 		cpi at, won
 		breq winningt4
-			ldscpi fours, t >> 1;
+			ldscpi second, t >> 1;
 			brne endnotinpot_t4
 				clr temp;
 				sts TIMSK4, temp
 				rcall buzzeroff
 				rjmp endnotinpot_t4
 		winningt4:
-			lds temp, fours
+			lds temp, second
 			andi temp, 15
 
 			cpi temp, 0
@@ -529,7 +545,7 @@ timer4:
 				cbi PORTA, 1
 			turnofft4:
 	endnotinpot_t4:
-	ldsinc fours
+	ldsinc second
 
 	pop temp3
 	pop temp2
@@ -821,7 +837,7 @@ find:
 	push temp3
 	push yh
 	push yl
-	cpi state,3 ; if not the first time going through, dont need to find the numbers
+	cpi roundsleft,3 ; if not the first time going through, dont need to find the numbers
 	brne next
 		loadmem seed ; loads the random generator number
 		mov temp2,wl
@@ -836,7 +852,7 @@ find:
 
 		rcall differentnumber; -something buggy about this as well
 next:
-	mov temp2,state
+	mov temp2,roundsleft
 	ldi yl,low(RandNum)
 	ldi yh,high(RandNum)
 	loops:
@@ -879,6 +895,7 @@ pot:
 	push temp4
 	ldi at, inpot
 
+	do_lcd_command 0b00000001
 	do_lcd_command 0b11000000
 	do_lcd_datai 'R'
 	do_lcd_datai 'e'
@@ -894,15 +911,6 @@ pot:
 	
 	;choose number
 	loadmem seed
-/*	mov temp, wh
-	lsr temp
-	lsr temp
-	mov temp2, state
-	lsl temp2
-	inc temp2
-	mul temp, state
-	add r0, wl
-	add r1, wh*/
 	andi wh, 3
 	mov temp4, wh
 	mov temp3, wl
@@ -913,7 +921,7 @@ pot:
 	rcall displayt
 	rcall buzzeron
 	clr temp
-	sts fours, temp
+	sts second, temp
 	ldi temp, 1 << TOIE4
 	sts TIMSK4, temp
 
@@ -982,7 +990,7 @@ pot:
 	cbi PORTG, 1
 
 	rcall buzzeron
-	ldists fours, 0
+	ldists second, 0
 
 	ldi at, infind
 		
@@ -1005,7 +1013,13 @@ enter:
 	push yh
 	push temp
 	push temp2
-	push state
+	push roundsleft
+	
+	ldi temp, 1<<TOIE4
+	sts TIMSK4, temp
+	rcall buzzeron
+	ldists second, 0
+	
 	do_lcd_command 0b00000001 ; clear display
 	do_lcd_datai 'E'
 	do_lcd_datai 'n'
@@ -1026,19 +1040,19 @@ enter:
 		do_lcd_datai ' '
 	start_enter:
 		do_lcd_command 0b11000000
-		ldi state,3
+		ldi roundsleft,3
 		ldi yl,low(RandNum+2)
 		ldi yh,high(RandNum+2)
 		ld temp2,y
 		press_number:
-		cpi state,0
+		cpi roundsleft,0
 		breq finish_entering
 			repeat_key:
 			rcall keyboard
 			ldscpi keyFlag1,0 ; button not pressed
 			breq repeat_key
 		ldists keyFlag1,0
-		cpi state,3
+		cpi roundsleft,3
 		breq compare_y
 			ld temp2,-y
 		compare_y:
@@ -1046,10 +1060,10 @@ enter:
 			cp temp,temp2
 			brne enter_again
 			do_lcd_datai '*'
-			dec state
+			dec roundsleft
 			rjmp press_number
 	finish_entering:
-	pop state
+	pop roundsleft
 	pop temp2
 	pop temp
 	pop yh
@@ -1065,8 +1079,8 @@ resetpottoz:
 	out PORTC, temp
 	cbi PORTG, 1
 	cbi PORTG, 0
+	sts TIMSK4, temp
 
-	cli
 	do_lcd_command 0b00000010 
 	do_lcd_datai 'R'
 	do_lcd_datai 'e'
@@ -1082,15 +1096,19 @@ resetpottoz:
 	do_lcd_datai 'o'
 	do_lcd_datai ' '
 	do_lcd_datai '0'
-	sei
+	
+	ldi temp, 1 << TOIE4
+	sts TIMSK4, temp
 
 	resetpottozloop:
+		loadmem adcreading
 		cpi wl, 0;
 		brne resetpottozloop
 		cpi wh, 0;
 		brne resetpottozloop
 
-	cli
+	clr temp
+	sts TIMSK4, temp
 	do_lcd_command 0b00000010 
 	do_lcd_datai 'F'
 	do_lcd_datai 'i'
@@ -1106,7 +1124,8 @@ resetpottoz:
 	do_lcd_datai 's'
 	do_lcd_datai ' '
 	do_lcd_datai ' '
-	sei
+	ldi temp, 1 << TOIE4
+	sts TIMSK4, temp
 
 	pop temp
 	ret
