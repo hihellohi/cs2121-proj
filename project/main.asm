@@ -1,7 +1,7 @@
 .include "m2560def.inc"
 
 ;MACROS
-.macro swp
+.macro swp ;swap two registers
 	mov r15, @1
 	mov @1, @0
 	mov @0, r15
@@ -22,7 +22,7 @@
 	swp temp, @0
 .endmacro
 
-.macro do_lcd_datai
+.macro do_lcd_datai ;display immediate value
 	mov r15, temp
 	ldi temp, @0
 	rcall lcd_data
@@ -30,23 +30,17 @@
 	mov temp, r15
 .endmacro
 
-.macro bin_to_dec_w
-	ldi temp2, low(@0)
-	ldi temp3, high(@0)
-	rcall bin_to_dec_wf
-.endmacro
-
 .macro bin_to_dec_t
 	ldi temp2, @0
 	rcall bin_to_dec_f
 .endmacro
 
-.macro loadmem
+.macro loadmem ;load a word in memory to wh and wl
 	lds wl, @0
 	lds wh, @0 + 1;
 .endmacro 
 
-.macro storemem
+.macro storemem ;store a word in memory from wh and wl
 	sts @0, wl
 	sts @0 + 1, wh;
 .endmacro 
@@ -95,17 +89,6 @@ shifting:
 		rjmp loopy
 .endmacro
 
-.macro printwtf
-		push wl
-		push wh
-		clr wh
-		mov wl,@0
-		do_lcd_command 0b00010100 ; increment to the right
-		rcall displayw
-		pop wh
-		pop wl
-.endmacro
-
 .macro convert_number
 		mov temp4,wl; store row in temp4
 		ldi temp3,4
@@ -139,12 +122,12 @@ shifting:
 
 .dseg
 ;VARIABLES
-count:	.byte 1;
-ocount:	.byte 1;
-bounce: .byte 1;
-second:	.byte 1;
-wadc:	.byte 1;
-potwin:	.byte 1;
+count:		.byte 1;
+ocount:		.byte 1;
+bounce:		.byte 1;
+second:		.byte 1;
+wadc:		.byte 1;
+potwin:		.byte 1;
 seed:		.byte 2;
 RandNum:	.byte 3;
 keyFlag:    .byte 1;
@@ -171,7 +154,7 @@ win_lose:	.byte 1
 	jmp timer1
 .org OVF0addr
 	jmp timer0
-.org 0x3A
+.org 0x3A ;adc interrupt
 	jmp adcread
 .org OVF3addr
 	jmp timer3
@@ -338,11 +321,12 @@ RESET:
 
 	sei;
 
-	ldi temp, 0x7F
+	ldi temp, 0xF
 	sts PORTL, temp
-	lds temp2, ocount
-	notYetStarted:
 
+	notYetStarted:
+		
+		;change difficulty
 		lds temp, PINL
 		andi temp, 0xF
 		cpi temp, 0xF
@@ -356,6 +340,7 @@ RESET:
 			sbrs temp, 3
 				ldi temp2, 5
 		nobutton:
+
 		cpi at, incountdown
 		brne notYetStarted
 
@@ -389,7 +374,6 @@ adcread:
 	lds wh, ADCH
 	ldists wadc, 0
 	storemem adcreading
-	;rcall displayw
 	pop temp
 	out SREG, temp
 	pop temp
@@ -485,17 +469,17 @@ timer4:
 	brne notinpot_t4
 		ldscpi potwin, 0;
 		breq timer4notwin
-			inc temp;
+			inc temp; increment pot win timer
 			sts potwin, temp;
 		timer4notwin:
 		ldscpi second, t;
 		brne full
 			ldists second, 0
-			ldsdec count
+			ldsdec count ;decrement and display time left
 			breq losejump
 			do_lcd_command 0b11000000 + 11
 			rcall displayt
-			do_lcd_datai ' '
+			do_lcd_datai ' ' ;in case we need to overwrite existing display
 			rcall buzzeron
 			rjmp endnotinpot_t4
 		full:
@@ -504,16 +488,16 @@ timer4:
 			cp temp2, temp3
 
 			breq quarter
-				cpi temp, (t >> 2);
+				cpi temp, (t >> 2); at 250ms for the general case...
 				rjmp half;
 			quarter:
-				cpi temp, (t >> 1);
+				cpi temp, (t >> 1); at 500ms for the first beep...
 			half:
 			brne checkadc
-				rcall buzzeroff
+				rcall buzzeroff; stop the buzzer
 				rjmp endnotinpot_t4
 			checkadc:
-				andi temp, 3 ;POT FREQUENCY
+				andi temp, 0b11 ;read the pot every 8th of a second
 				cpi temp, 0;
 				brne endnotinpot_t4
 				ldscpi wadc, 1
@@ -523,15 +507,15 @@ timer4:
 	notinpot_t4:
 		cpi at, won
 		breq winningt4
-			ldscpi second, t >> 1;
+			ldscpi second, t >> 1; stop the buzzer at 500ms if not in find pot mode
 			brne endnotinpot_t4
 				clr temp;
 				sts TIMSK4, temp
 				rcall buzzeroff
 				rjmp endnotinpot_t4
-		winningt4:
+		winningt4: ;if won, flash strobe
 			lds temp, second
-			andi temp, 15
+			andi temp, 0b1111 ;not the state of strobe every quarter of a second
 
 			cpi temp, 0
 			brne turnont4
@@ -660,7 +644,7 @@ timer3:
 	
 	
 
-timer1:
+timer1: ;dedicated buzzer timer
 	sei
 	push temp
 	in temp, SREG
@@ -680,7 +664,6 @@ timer1:
 	reti
 
 timer0:
-	;rngesus
 	push temp
 	in temp, SREG
 	push temp
@@ -741,7 +724,7 @@ timer0:
 win:
 	ldi at, won
 	rcall buzzeron
-	ldi temp, 1 << TOIE4
+	ldi temp, 1 << TOIE4 ;enable strobe
 	sts TIMSK4, temp
 	do_lcd_command 0b00000001
 	do_lcd_datai 'G'
@@ -820,7 +803,7 @@ startingcountdown:
 	do_lcd_datai '.'
 	do_lcd_datai '.'
 	do_lcd_datai '.'
-	countdownLoop:
+	countdownLoop: ;count down from 3
 		dec temp
 		do_lcd_command 0b11000000 + 12
 		do_lcd_data temp
@@ -975,7 +958,7 @@ pot:
 
 			ldscpi potwin, 0
 			brne potwinalreadystarted
-				inc temp;
+				inc temp ;enable the countdown to victory
 				sts potwin, temp
 			potwinalreadystarted:
 
@@ -984,7 +967,7 @@ pot:
 			rjmp endpot10light
 		pot10lightoff:
 			cbi PORTG, 1
-			ldists potwin, 0
+			ldists potwin, 0 ;disable countdown to victory
 		endpot10light:
 
 	rjmp potloop;
@@ -1010,9 +993,6 @@ pot:
 	pop temp
 	ret
 
-	;timer4 mask
-	;rcall buzzeron
-	;ldists fours,0
 enter:
 	ldi at, inenter
 	push yl
@@ -1111,7 +1091,7 @@ resetpottoz:
 		cpi wl, 0;
 		brne resetpottozloop
 		cpi wh, 0;
-		brne resetpottozloop
+		brne resetpottozloop ;loop until w is 0
 
 	clr temp
 	sts TIMSK4, temp
@@ -1163,7 +1143,7 @@ buzzeroff:
 	pop temp
 	ret
 
-displayt:
+displayt:;displays the value in temp2 in decimal form
 	push temp
 	push temp2
 	push temp3
@@ -1199,53 +1179,6 @@ bin_to_dec_f:
 	breq dontprintbtd;
 		do_lcd_data temp4
 	dontprintbtd:
-	pop temp4
-	ret
-
-displayw:
-	push temp
-	push temp2
-	push temp3
-	push wh
-	push wl
-
-	clr temp;
-	;do_lcd_command 0b00000001 ; clear display
-	bin_to_dec_w 10000;
-	bin_to_dec_w 1000;
-	bin_to_dec_w 100;
-	bin_to_dec_w 10;
-	bin_to_dec_w 1;
-	cpi temp, 0;
-	brne dontprintzerow
-		do_lcd_datai '0'
-	dontprintzerow:
-
-	pop wl
-	pop wh
-	pop temp3
-	pop temp2
-	pop temp
-	ret;
-
-bin_to_dec_wf:
-	push temp4
-	ldi temp4, '0'
-	bintodecwloop:
-		cp wl, temp2
-		cpc wh, temp3
-		brlo endbintodecwloop
-		
-		sub wl, temp2
-		sbc wh, temp3
-		inc temp4;
-		ser temp;
-		rjmp bintodecwloop;
-	endbintodecwloop:
-	cpi temp, 0
-	breq dontprintbtdw;
-		do_lcd_data temp4
-	dontprintbtdw:
 	pop temp4
 	ret
 
