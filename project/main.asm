@@ -558,6 +558,9 @@ timer3:
 	push temp
 	in temp,SREG
 	push temp
+	push temp2
+	push temp3
+	push temp4
 	push wl
 	push wh
 		
@@ -571,10 +574,11 @@ timer3:
 	turn_backlight: 
 	ldscpi win_lose,0 ; used when the key is pressed at win/lose stage
 	brne turn_on
-	ldists no_debounce,1 ; set it to no debounce
-	rcall keyboard ; check keyboard
+	rcall backlight ; check keyboard
 	ldscpi pressed_b,1 ; check if button is pressed
-	breq turn_on; if button pressed, turn on light
+	breq turn_on
+
+	check_light:
 	ldscpi backlighton,1 ; at full brightness
 	brne pwm_on_off
 	rjmp count_fiveS ; at its full brightness; now count for 4.5s
@@ -648,6 +652,9 @@ timer3:
 	finish_light:
 	pop wh
 	pop wl
+	pop temp4
+	pop temp3
+	pop temp2
 	pop temp
 	out SREG,temp
 	pop temp
@@ -793,6 +800,7 @@ finished:
 	rcall buzzeroff
 halt:
 	rjmp halt
+	
 
 startingcountdown:
 	push temp
@@ -1285,7 +1293,7 @@ keyboard:
 				cpi temp3, 0 ; number is found
 				mov temp3, temp4
 				brne not_found
-					ldists pressed_b,1
+					;ldists pressed_b,1
 					ldscpi no_debounce,1
 					breq finish1
 					rcall debounce
@@ -1417,15 +1425,18 @@ ret
 backlight:
 	push temp
 	push temp2
-	ldists no_debounce,1
-	loopies:
-		rcall keyboard
-		ldscpi keyFlag1,1
-		brne loopies
-	pop temp2
+	ldi temp,0xF
+	sts PORTL,temp
+	lds temp2, PINL
+	andi temp2, 0xF
+	cpi temp2, 0xF
+	breq finish_backlight
+	ldists pressed_b,1
+finish_backlight:
 	pop temp
+	pop temp2
 	ret
-
+	
 
 
 ;LCD CODE
